@@ -11,6 +11,9 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Backend.Services.Auth;
 using Backend.Services.Token;
+using Fido2NetLib;
+using Microsoft.Extensions.Caching.Memory;
+using Backend.Services.Passkey;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -49,6 +52,29 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Register Services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
+
+//Register memory cache (required for WebAuthn challenge storage)
+builder.Services.AddMemoryCache();
+
+//Load FIDO2 configuration from appsettings.json
+var fido2Section = builder.Configuration.GetSection("Fido2");
+var origin = fido2Section["Origin"] ?? "https://localhost:3000"; 
+var rpId = fido2Section["RpId"] ?? "localhost";
+
+//Register FIDO2 instance (Singleton)
+builder.Services.AddSingleton(sp =>
+{
+    return new Fido2(new Fido2Configuration
+    {
+        ServerDomain = rpId,
+        ServerName = fido2Section["ServerName"] ?? "My Auth API",
+        Origins = new HashSet<string> { origin },
+        TimestampDriftTolerance = (int)long.Parse(fido2Section["TimestampDriftTolerance"] ?? "300000")
+    });
+});
+
+//Register Passkey Service
+builder.Services.AddScoped<IPasskeyService, PasskeyService>();
 
 //Add JWT Authentication
 var key = Encoding.UTF8.GetBytes(jwtSecret!);

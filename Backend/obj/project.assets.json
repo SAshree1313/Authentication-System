@@ -19,6 +19,42 @@
           "lib/netstandard1.3/DotNetEnv.dll": {}
         }
       },
+      "Fido2/3.0.1": {
+        "type": "package",
+        "dependencies": {
+          "Fido2.Models": "3.0.1",
+          "Microsoft.Extensions.Http": "6.0.0",
+          "NSec.Cryptography": "22.4.0",
+          "System.Formats.Cbor": "6.0.0",
+          "System.IdentityModel.Tokens.Jwt": "6.17.0"
+        },
+        "compile": {
+          "lib/net6.0/Fido2.dll": {
+            "related": ".pdb"
+          }
+        },
+        "runtime": {
+          "lib/net6.0/Fido2.dll": {
+            "related": ".pdb"
+          }
+        },
+        "build": {
+          "build/fido2.targets": {}
+        }
+      },
+      "Fido2.Models/3.0.1": {
+        "type": "package",
+        "compile": {
+          "lib/net6.0/Fido2.Models.dll": {
+            "related": ".pdb;.xml"
+          }
+        },
+        "runtime": {
+          "lib/net6.0/Fido2.Models.dll": {
+            "related": ".pdb;.xml"
+          }
+        }
+      },
       "FluentValidation/11.11.0": {
         "type": "package",
         "compile": {
@@ -79,6 +115,43 @@
         "runtime": {
           "lib/net6.0/Humanizer.dll": {
             "related": ".xml"
+          }
+        }
+      },
+      "libsodium/1.0.18.2": {
+        "type": "package",
+        "runtimeTargets": {
+          "runtimes/linux-arm/native/libsodium.so": {
+            "assetType": "native",
+            "rid": "linux-arm"
+          },
+          "runtimes/linux-arm64/native/libsodium.so": {
+            "assetType": "native",
+            "rid": "linux-arm64"
+          },
+          "runtimes/linux-musl-x64/native/libsodium.so": {
+            "assetType": "native",
+            "rid": "linux-musl-x64"
+          },
+          "runtimes/linux-x64/native/libsodium.so": {
+            "assetType": "native",
+            "rid": "linux-x64"
+          },
+          "runtimes/osx-arm64/native/libsodium.dylib": {
+            "assetType": "native",
+            "rid": "osx-arm64"
+          },
+          "runtimes/osx-x64/native/libsodium.dylib": {
+            "assetType": "native",
+            "rid": "osx-x64"
+          },
+          "runtimes/win-x64/native/libsodium.dll": {
+            "assetType": "native",
+            "rid": "win-x64"
+          },
+          "runtimes/win-x86/native/libsodium.dll": {
+            "assetType": "native",
+            "rid": "win-x86"
           }
         }
       },
@@ -703,6 +776,25 @@
           "buildTransitive/net6.0/_._": {}
         }
       },
+      "Microsoft.Extensions.Http/6.0.0": {
+        "type": "package",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "6.0.0",
+          "Microsoft.Extensions.Logging": "6.0.0",
+          "Microsoft.Extensions.Logging.Abstractions": "6.0.0",
+          "Microsoft.Extensions.Options": "6.0.0"
+        },
+        "compile": {
+          "lib/netstandard2.0/Microsoft.Extensions.Http.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/netstandard2.0/Microsoft.Extensions.Http.dll": {
+            "related": ".xml"
+          }
+        }
+      },
       "Microsoft.Extensions.Identity.Core/2.3.0": {
         "type": "package",
         "dependencies": {
@@ -1110,6 +1202,18 @@
           "lib/net7.0/Npgsql.EntityFrameworkCore.PostgreSQL.dll": {
             "related": ".xml"
           }
+        }
+      },
+      "NSec.Cryptography/22.4.0": {
+        "type": "package",
+        "dependencies": {
+          "libsodium": "[1.0.18.2, 1.0.19)"
+        },
+        "compile": {
+          "lib/net5.0/NSec.Cryptography.dll": {}
+        },
+        "runtime": {
+          "lib/net5.0/NSec.Cryptography.dll": {}
         }
       },
       "runtime.debian.8-x64.runtime.native.System.Security.Cryptography.OpenSsl/4.3.2": {
@@ -1533,6 +1637,19 @@
         },
         "build": {
           "buildTransitive/net6.0/_._": {}
+        }
+      },
+      "System.Formats.Cbor/6.0.0": {
+        "type": "package",
+        "compile": {
+          "lib/net6.0/System.Formats.Cbor.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net6.0/System.Formats.Cbor.dll": {
+            "related": ".xml"
+          }
         }
       },
       "System.Globalization/4.3.0": {
@@ -2585,6 +2702,34 @@
         "lib/netstandard1.3/DotNetEnv.dll"
       ]
     },
+    "Fido2/3.0.1": {
+      "sha512": "S0Bz1vfcKlO4Jase3AWp5XnQ746psf4oGx5kL+D2A10j1SsjoAOAIIpanSwfi0cEepDHgk1bClcOKY5TjOzGdA==",
+      "type": "package",
+      "path": "fido2/3.0.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "build/fido2.targets",
+        "fido2.3.0.1.nupkg.sha512",
+        "fido2.nuspec",
+        "lib/net6.0/Fido2.dll",
+        "lib/net6.0/Fido2.pdb"
+      ]
+    },
+    "Fido2.Models/3.0.1": {
+      "sha512": "mgjcuGETuYSCUEaZG+jQeeuuEMkDLc4GDJHBvKDdOz6oSOWp5adPdWP4btZx7Pi+9fu4szN3JIjJmby67MaILw==",
+      "type": "package",
+      "path": "fido2.models/3.0.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "fido2.models.3.0.1.nupkg.sha512",
+        "fido2.models.nuspec",
+        "lib/net6.0/Fido2.Models.dll",
+        "lib/net6.0/Fido2.Models.pdb",
+        "lib/net6.0/Fido2.Models.xml"
+      ]
+    },
     "FluentValidation/11.11.0": {
       "sha512": "cyIVdQBwSipxWG8MA3Rqox7iNbUNUTK5bfJi9tIdm4CAfH71Oo5ABLP4/QyrUwuakqpUEPGtE43BDddvEehuYw==",
       "type": "package",
@@ -2662,6 +2807,28 @@
         "lib/netstandard2.0/Humanizer.dll",
         "lib/netstandard2.0/Humanizer.xml",
         "logo.png"
+      ]
+    },
+    "libsodium/1.0.18.2": {
+      "sha512": "flArHoVdscSzyV8ZdPV+bqqY2TTFlaN+xZf/vIqsmHI51KVcD/mOdUPaK3n/k/wGKz8dppiktXUqSmf3AXFgig==",
+      "type": "package",
+      "path": "libsodium/1.0.18.2",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "AUTHORS",
+        "ChangeLog",
+        "LICENSE",
+        "libsodium.1.0.18.2.nupkg.sha512",
+        "libsodium.nuspec",
+        "runtimes/linux-arm/native/libsodium.so",
+        "runtimes/linux-arm64/native/libsodium.so",
+        "runtimes/linux-musl-x64/native/libsodium.so",
+        "runtimes/linux-x64/native/libsodium.so",
+        "runtimes/osx-arm64/native/libsodium.dylib",
+        "runtimes/osx-x64/native/libsodium.dylib",
+        "runtimes/win-x64/native/libsodium.dll",
+        "runtimes/win-x86/native/libsodium.dll"
       ]
     },
     "Microsoft.AspNetCore.Authentication/2.3.0": {
@@ -3551,6 +3718,25 @@
         "useSharedDesignerContext.txt"
       ]
     },
+    "Microsoft.Extensions.Http/6.0.0": {
+      "sha512": "15+pa2G0bAMHbHewaQIdr/y6ag2H3yh4rd9hTXavtWDzQBkvpe2RMqFg8BxDpcQWssmjmBApGPcw93QRz6YcMg==",
+      "type": "package",
+      "path": "microsoft.extensions.http/6.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "LICENSE.TXT",
+        "THIRD-PARTY-NOTICES.TXT",
+        "lib/net461/Microsoft.Extensions.Http.dll",
+        "lib/net461/Microsoft.Extensions.Http.xml",
+        "lib/netstandard2.0/Microsoft.Extensions.Http.dll",
+        "lib/netstandard2.0/Microsoft.Extensions.Http.xml",
+        "microsoft.extensions.http.6.0.0.nupkg.sha512",
+        "microsoft.extensions.http.nuspec",
+        "useSharedDesignerContext.txt"
+      ]
+    },
     "Microsoft.Extensions.Identity.Core/2.3.0": {
       "sha512": "yR0eFnUbAM2k+q5QsX0NKinfShIe1B/aiHXEywiNT5Cs2MvEhxQIbIn5rWXnEAfmwW+i+t5D8odPSEHz/taIyQ==",
       "type": "package",
@@ -4125,6 +4311,22 @@
         "npgsql.entityframeworkcore.postgresql.7.0.11.nupkg.sha512",
         "npgsql.entityframeworkcore.postgresql.nuspec",
         "postgresql.png"
+      ]
+    },
+    "NSec.Cryptography/22.4.0": {
+      "sha512": "lEntcPYd7h3aZ8xxi/y/4TML7o8w0GEGqd+w4L1omqFLbdCBmhxJAeO2YBmv/fXbJKgKCQLm7+TD4bR605PEUQ==",
+      "type": "package",
+      "path": "nsec.cryptography/22.4.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "NOTICE",
+        "lib/net5.0/NSec.Cryptography.dll",
+        "lib/netstandard2.1/NSec.Cryptography.dll",
+        "nsec.cryptography.22.4.0.nupkg.sha512",
+        "nsec.cryptography.nuspec",
+        "nsec.png"
       ]
     },
     "runtime.debian.8-x64.runtime.native.System.Security.Cryptography.OpenSsl/4.3.2": {
@@ -5096,6 +5298,25 @@
         "lib/netstandard2.0/System.Formats.Asn1.xml",
         "system.formats.asn1.8.0.1.nupkg.sha512",
         "system.formats.asn1.nuspec",
+        "useSharedDesignerContext.txt"
+      ]
+    },
+    "System.Formats.Cbor/6.0.0": {
+      "sha512": "mGaLOoiw7KurJagOOcIsWUoCT5ACIiGxKlCcbYQASefBGXjnCcKTq5Hdjb94eEAKg38zXKlHw4c6EjzgBl9dIw==",
+      "type": "package",
+      "path": "system.formats.cbor/6.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "LICENSE.TXT",
+        "THIRD-PARTY-NOTICES.TXT",
+        "lib/net5.0/System.Formats.Cbor.dll",
+        "lib/net5.0/System.Formats.Cbor.xml",
+        "lib/net6.0/System.Formats.Cbor.dll",
+        "lib/net6.0/System.Formats.Cbor.xml",
+        "system.formats.cbor.6.0.0.nupkg.sha512",
+        "system.formats.cbor.nuspec",
         "useSharedDesignerContext.txt"
       ]
     },
@@ -7888,11 +8109,13 @@
   "projectFileDependencyGroups": {
     "net7.0": [
       "DotNetEnv >= 3.1.1",
+      "Fido2 >= 3.0.1",
       "FluentValidation.AspNetCore >= 11.3.1",
       "Microsoft.AspNetCore.Authentication.JwtBearer >= 7.0.17",
       "Microsoft.AspNetCore.Identity >= 2.3.1",
       "Microsoft.AspNetCore.OpenApi >= 7.0.20",
       "Microsoft.EntityFrameworkCore.Design >= 7.0.8",
+      "Microsoft.Extensions.Caching.Memory >= 7.0.0",
       "Npgsql >= 7.0.6",
       "Npgsql.EntityFrameworkCore.PostgreSQL >= 7.0.11",
       "Swashbuckle.AspNetCore >= 6.5.0"
@@ -7939,6 +8162,10 @@
             "target": "Package",
             "version": "[3.1.1, )"
           },
+          "Fido2": {
+            "target": "Package",
+            "version": "[3.0.1, )"
+          },
           "FluentValidation.AspNetCore": {
             "target": "Package",
             "version": "[11.3.1, )"
@@ -7960,6 +8187,10 @@
             "suppressParent": "All",
             "target": "Package",
             "version": "[7.0.8, )"
+          },
+          "Microsoft.Extensions.Caching.Memory": {
+            "target": "Package",
+            "version": "[7.0.0, )"
           },
           "Npgsql": {
             "target": "Package",
