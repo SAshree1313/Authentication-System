@@ -85,7 +85,7 @@ namespace Backend.Services.Passkey
         public async Task<PasskeyRegisterCompleteResponseDto> RegisterCompleteAsync(PasskeyRegisterCompleteRequestDto request)
         {
             // 1️⃣ Validate challenge existence
-            if (!_cache.TryGetValue<CredentialCreateOptions>(request.ChallengeId, out var options))
+            if (!_cache.TryGetValue<CredentialCreateOptions>(request.ChallengeId, out var options) || options == null)
                 throw new NotFoundException("Passkey challenge expired or not found.");
 
             _cache.Remove(request.ChallengeId); // one-use
@@ -107,7 +107,18 @@ namespace Backend.Services.Passkey
             Fido2.CredentialMakeResult result;
             try
             {
-                result = await _fido2.MakeNewCredentialAsync(attestationResponse, options, null);
+                result = await _fido2.MakeNewCredentialAsync(
+                    attestationResponse, 
+                    options ?? throw new InvalidOperationException("Options cannot be null"),
+                    async (args, ct) =>
+                    {
+                        // Check if this credential already exists
+                        var credentialIdString = Base64UrlHelper.Encode(args.CredentialId);
+                        var exists = await _context.WebAuthnCredentials
+                            .AnyAsync(c => c.CredentialId == credentialIdString);
+                        return !exists; // Return true if credential is unique to this user
+                    }
+                );
             }
             catch (Exception ex)
             {
@@ -115,11 +126,17 @@ namespace Backend.Services.Passkey
             }
 
             // 4️⃣ Extract data
+            if (result?.Result == null)
+                throw new Exception("Attestation result is null.");
+                
             var credentialId = Base64UrlHelper.Encode(result.Result.CredentialId);
             var publicKey = Base64UrlHelper.Encode(result.Result.PublicKey);
             var signCount = (int)result.Result.Counter;
 
             // 5️⃣ Get userId from challenge
+            if (options?.User?.Id == null || options.User.Id.Length < 4)
+                throw new Exception("Invalid user ID in challenge options.");
+                
             var userId = BitConverter.ToInt32(options.User.Id, 0);
 
             // 6️⃣ Save credential
@@ -154,7 +171,7 @@ namespace Backend.Services.Passkey
             try
             {
                 options = _fido2.GetAssertionOptions(
-                    allowedCredentials: null,
+                    allowedCredentials: new List<PublicKeyCredentialDescriptor>(),
                     userVerification: UserVerificationRequirement.Required
                 );
             }
@@ -193,7 +210,12 @@ namespace Backend.Services.Passkey
                 Type = PublicKeyCredentialType.PublicKey
             };
             
-            // Set response data properties directly
+            // Initialize response if null, then set properties
+            if (assertionResponse.Response == null)
+            {
+                assertionResponse.Response = new AuthenticatorAssertionRawResponse.AssertionResponse();
+            }
+            
             assertionResponse.Response.AuthenticatorData = Base64UrlHelper.Decode(request.Response.AuthenticatorData);
             assertionResponse.Response.ClientDataJson = Base64UrlHelper.Decode(request.Response.ClientDataJSON);
             assertionResponse.Response.Signature = Base64UrlHelper.Decode(request.Response.Signature);
@@ -206,14 +228,15 @@ namespace Backend.Services.Passkey
             AssertionVerificationResult result;
             try
             {
+                var credentialIdString = Base64UrlHelper.Encode(assertionResponse.Id);
                 credentialEntity = await _context.WebAuthnCredentials
                     .Include(c => c.User)
-                    .FirstOrDefaultAsync(c => c.CredentialId == Convert.ToBase64String(assertionResponse.Id));
+                    .FirstOrDefaultAsync(c => c.CredentialId == credentialIdString);
 
                 if (credentialEntity == null)
                     throw new InvalidCredentialsException("Assertion failed: unknown credential.");
 
-                var publicKeyBytes = Convert.FromBase64String(credentialEntity.PublicKey);
+                var publicKeyBytes = Base64UrlHelper.Decode(credentialEntity.PublicKey);
                 var storedCounter = (uint)credentialEntity.SignCount;
 
                 result = await _fido2.MakeAssertionAsync(
@@ -256,7 +279,10 @@ namespace Backend.Services.Passkey
             string jwt;
             try
             {
-                jwt = _tokenService.GenerateToken(credentialEntity.User ?? throw new InvalidOperationException("User not found"));
+                if (credentialEntity?.User == null)
+                    throw new InvalidOperationException("User not found for credential.");
+                    
+                jwt = _tokenService.GenerateToken(credentialEntity.User);
             }
             catch (Exception ex)
             {

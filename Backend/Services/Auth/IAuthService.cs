@@ -1,5 +1,6 @@
 using Backend.DTOs.Register;
 using Backend.DTOs.Login;
+using Backend.DTOs.Passkey;
 
 namespace Backend.Services.Auth
 {
@@ -7,5 +8,6 @@ namespace Backend.Services.Auth
     {
         Task<RegisterResponseDto> RegisterAsync(RegisterRequestDto request);
         Task<LoginResponseDto> LoginAsync(LoginRequestDto request);
+        Task<UserProfileResponseDto> GetProfileAsync(int userId);
     }
 }

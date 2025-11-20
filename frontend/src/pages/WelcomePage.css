@@ -1,0 +1,64 @@
+/* Page background */
+.welcome-container {
+  background: #f6f8fa;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top right navigation */
+.welcome-nav {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+}
+
+/* Generate Passkey button (Primary) */
+.btn-generate {
+  background: #343434;
+  color: white;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.btn-generate:hover {
+  background: #060606;
+}
+
+/* Logout button (Secondary) */
+.btn-logout {
+  background: rgb(227, 42, 42);
+  border: 1px solid #d0d7de;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  color: #24292f;
+  user-select: none;
+}
+
+.btn-logout:hover {
+  background: rgb(189, 4, 4);
+}
+
+/* Center welcome message */
+.welcome-message {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  user-select: none;
+}
+
+.welcome-message h1 {
+  font-size: 28px;
+  color: #24292f;
+  text-align: center;
+}

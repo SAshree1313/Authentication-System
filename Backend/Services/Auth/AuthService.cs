@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Backend.DTOs.Login;
 using Backend.Exceptions;
+using Backend.DTOs.Passkey;
 
 namespace Backend.Services.Auth
 {
@@ -28,7 +29,7 @@ namespace Backend.Services.Auth
             var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
 
             if (existingUser != null)
-                throw new Exception("Email already exists.");
+                throw new DuplicateEmailException("Email already exists.");
 
             // 2️⃣ Create user
             var newUser = new User
@@ -82,5 +83,24 @@ namespace Backend.Services.Auth
                 Token = token
             };
         }
+
+        public async Task<UserProfileResponseDto> GetProfileAsync(int userId)
+        {
+            var user = await _context.Users
+                .Include(u => u.WebAuthnCredentials)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null)
+                throw new UserNotFoundException("User not found.");
+
+            return new UserProfileResponseDto
+            {
+                Id = user.Id,
+                Name = user.Name,
+                Email = user.Email,
+                HasPasskey = user.WebAuthnCredentials.Any()
+            };
+        }
+
     }
 }

@@ -19,7 +19,12 @@ using Backend.Services.Passkey;
 var builder = WebApplication.CreateBuilder(args);
 
 // Load .env from the parent folder (project root)
-Env.Load(Path.Combine(Directory.GetParent(Directory.GetCurrentDirectory()).FullName, ".env"));
+var currentDir = Directory.GetCurrentDirectory();
+var parentDir = Directory.GetParent(currentDir);
+var envPath = parentDir != null
+    ? Path.Combine(parentDir.FullName, ".env")
+    : Path.Combine(currentDir, ".env");
+Env.Load(envPath);
 
 // Build PostgreSQL connection string from environment variables
 var dbName = Environment.GetEnvironmentVariable("POSTGRES_DB");
@@ -99,6 +104,18 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// CORS — allow frontend to call backend
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:3000") // frontend origin
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 //Add Controllers + Swaggers + Validators
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -115,7 +132,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
+app.UseCors("AllowFrontend"); // <-- enable CORS
 
 //Error Handling Before Auth
 app.UseMiddleware<ErrorHandlingMiddleware>();

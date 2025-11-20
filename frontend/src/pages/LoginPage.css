@@ -1,0 +1,146 @@
+/* Page background */
+.login-container {
+  background: #f6f8fa;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  user-select: none;
+}
+
+/* Fake logo placeholder */
+.login-logo {
+  font-size: 28px;
+  font-weight: bold;
+  margin-bottom: 20px;
+}
+
+/* Main card */
+.login-card {
+  background: white;
+  width: 360px;
+  padding: 24px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  box-shadow: 0 1px 0 rgba(27, 31, 36, 0.04);
+}
+
+/* Title above form */
+.login-title {
+  font-size: 20px;
+  margin-bottom: 20px;
+  text-align: center;
+  color: #24292f;
+}
+
+/* Form layout */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login-form label {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* Input fields */
+.login-form input {
+  padding: 8px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 15px;
+}
+
+.login-form input:focus {
+  outline: none;
+  border-color: #0969da;
+  box-shadow: 0 0 0 1px rgba(9, 105, 218, 0.3);
+}
+
+/* Primary (Sign In) button */
+.primary-btn {
+  background: #24292f;
+  color: white;
+  padding: 10px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.primary-btn:hover {
+  background: #1f2428;
+}
+
+/* Secondary (Passkey) button */
+.secondary-btn {
+  background: white;
+  border: 1px solid #d0d7de;
+  padding: 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  color: #24292f;
+}
+
+.secondary-btn:hover {
+  background: #f3f4f6;
+}
+
+/* Footer link */
+.login-footer {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.login-footer a {
+  color: #0969da;
+  text-decoration: none;
+}
+
+.login-footer a:hover {
+  text-decoration: underline;
+}
+
+.password-wrapper {
+  display: flex;
+  align-items: center;
+  position: relative;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: white;
+}
+
+.password-wrapper input {
+  border: none;
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 15px;
+}
+
+.password-wrapper input:focus {
+  outline: none;
+}
+
+.password-wrapper:focus-within {
+  box-shadow: 0 0 0 1px rgba(9, 105, 218, 0.3);
+  border-color: #0969da;
+}
+
+.password-icon {
+  position: absolute;
+  right: 12px;
+  cursor: pointer;
+  font-size: 18px;
+  color: #555;
+}
+
+.password-icon:hover {
+  color: #000;
+}
