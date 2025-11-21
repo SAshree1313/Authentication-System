@@ -12,5 +12,17 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  backend:
+      build: ./Backend
+      container_name: auth_backend
+      ports:
+        - "8080:80"
+      env_file:
+        - .env
+      environment:
+        - ASPNETCORE_URLS=http://+:80
+      depends_on:
+        - postgres
+
 volumes:
   pgdata:

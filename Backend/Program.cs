@@ -19,12 +19,10 @@ using Backend.Services.Passkey;
 var builder = WebApplication.CreateBuilder(args);
 
 // Load .env from the parent folder (project root)
-var currentDir = Directory.GetCurrentDirectory();
-var parentDir = Directory.GetParent(currentDir);
-var envPath = parentDir != null
-    ? Path.Combine(parentDir.FullName, ".env")
-    : Path.Combine(currentDir, ".env");
-Env.Load(envPath);
+if (File.Exists(".env"))
+{
+    Env.Load();
+}
 
 // Build PostgreSQL connection string from environment variables
 var dbName = Environment.GetEnvironmentVariable("POSTGRES_DB");
@@ -47,7 +45,7 @@ builder.Configuration["Jwt:Secret"] = jwtSecret;
 builder.Configuration["Jwt:Issuer"] = jwtIssuer;
 builder.Configuration["Jwt:Audience"] = jwtAudience;
 
-var connectionString = $"Server=localhost;Port=5433;Database={dbName};Username={user};Password={password}";
+var connectionString = $"Server=postgres;Port=5432;Database={dbName};Username={user};Password={password}";
 
 // Register DbContext with PostgreSQL
 builder.Services.AddDbContext<AppDbContext>(options =>
