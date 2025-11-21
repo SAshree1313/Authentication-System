@@ -91,6 +91,16 @@ export default function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // ------------------------------------------
+  //  PASSKEY LOGIN
+  // ------------------------------------------
+  const passkeyLogin = async (token) => {
+    localStorage.setItem("token", token);
+    setToken(token);
+    
+    return { token };
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -99,6 +109,7 @@ export default function AuthProvider({ children }) {
         loading,
         login,
         register,
+        passkeyLogin,
         logout
       }}
     >

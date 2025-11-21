@@ -7,7 +7,7 @@ import { startLogin, finishLogin } from "../services/PasskeyService";
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { login } = useContext(AuthContext);
+  const { login, passkeyLogin } = useContext(AuthContext);
 
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
@@ -50,8 +50,9 @@ export default function LoginPage() {
       const assertionJSON = await finishLogin(begin.challengeId, begin.options);
 
       if (assertionJSON.success && assertionJSON.token) {
-        localStorage.setItem("token", assertionJSON.token);
-        setTimeout(() => navigate("/welcome"), 1500);
+        await passkeyLogin(assertionJSON.token);
+        // Small delay to ensure state updates propagate
+        setTimeout(() => navigate("/welcome"), 500);
       } else {
         setMessage(assertionJSON.message || "Passkey login failed");
       }
