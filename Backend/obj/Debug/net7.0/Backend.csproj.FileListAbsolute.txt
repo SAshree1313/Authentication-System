@@ -1,3 +1,10 @@
+C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.csproj.AssemblyReference.cache
+C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.GeneratedMSBuildEditorConfig.editorconfig
+C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.AssemblyInfoInputs.cache
+C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.AssemblyInfo.cs
+C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.csproj.CoreCompileInputs.cache
+C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.MvcApplicationPartsAssemblyInfo.cs
+C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.MvcApplicationPartsAssemblyInfo.cache
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\appsettings.Development.json
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\appsettings.json
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\Backend.exe
@@ -5,6 +12,7 @@ C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\Backend.runtimeconfig.json
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\Backend.dll
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\Backend.pdb
+C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\BCrypt.Net-Next.dll
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\DotNetEnv.dll
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\Fido2.dll
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\Fido2.Models.dll
@@ -64,13 +72,6 @@ C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\runtimes\win-x86\native\libsodium.dll
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\runtimes\win\lib\net7.0\System.Security.Cryptography.Pkcs.dll
 C:\Projects\Authentication System\Authentication-System\Backend\bin\Debug\net7.0\runtimes\browser\lib\net7.0\System.Text.Encodings.Web.dll
-C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.csproj.AssemblyReference.cache
-C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.GeneratedMSBuildEditorConfig.editorconfig
-C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.AssemblyInfoInputs.cache
-C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.AssemblyInfo.cs
-C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.csproj.CoreCompileInputs.cache
-C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.MvcApplicationPartsAssemblyInfo.cs
-C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\Backend.MvcApplicationPartsAssemblyInfo.cache
 C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\staticwebassets\msbuild.Backend.Microsoft.AspNetCore.StaticWebAssets.props
 C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\staticwebassets\msbuild.build.Backend.props
 C:\Projects\Authentication System\Authentication-System\Backend\obj\Debug\net7.0\staticwebassets\msbuild.buildMultiTargeting.Backend.props

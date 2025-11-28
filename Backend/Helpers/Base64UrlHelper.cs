@@ -17,7 +17,7 @@ namespace Backend.Helpers
             {
                 case 2: padded += "=="; break;
                 case 3: padded += "="; break;
-            }
+            }   
 
             return Convert.FromBase64String(padded);
         }

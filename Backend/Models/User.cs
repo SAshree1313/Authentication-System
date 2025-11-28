@@ -6,13 +6,23 @@ namespace Backend.Models
     public class User
     {
         public int Id { get; set; }
-        public string Name { get; set; }       // Added Name
-        public string Email { get; set; }
-        public string PasswordHash { get; set; }
+        public string Name { get; set; } = string.Empty;       // Added Name
+        public string Email { get; set; } = string.Empty;
+
+        // Password not used in passkey-only auth
+        //public string PasswordHash { get; set; }
+
+         // Recovery system
+        public string? RecoveryCodeHash { get; set; }
+        public DateTime? RecoveryCodeCreatedAt { get; set; }
+        public DateTime? RecoveryCodeUsedAt { get; set; }
+
+
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation property for WebAuthn credentials
-        public List<WebAuthnCredential> WebAuthnCredentials { get; set; }
+        public List<WebAuthnCredential> WebAuthnCredentials { get; set; } = new List<WebAuthnCredential>();
     }
 }

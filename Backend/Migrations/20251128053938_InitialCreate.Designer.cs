@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251114134515_InitialCreate")]
+    [Migration("20251128053938_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -42,17 +42,26 @@ namespace Backend.Migrations
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("email");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
 
-                    b.Property<string>("PasswordHash")
-                        .IsRequired()
+                    b.Property<DateTime?>("RecoveryCodeCreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recovery_code_created_at");
+
+                    b.Property<string>("RecoveryCodeHash")
                         .HasColumnType("text")
-                        .HasColumnName("password_hash");
+                        .HasColumnName("recovery_code_hash");
+
+                    b.Property<DateTime?>("RecoveryCodeUsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recovery_code_used_at");
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -84,19 +93,32 @@ namespace Backend.Migrations
 
                     b.Property<string>("CredentialId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("credential_id");
+
+                    b.Property<string>("DeviceName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("device_name");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_used_at");
 
                     b.Property<string>("PublicKey")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("public_key");
 
                     b.Property<int>("SignCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
-                        .HasDefaultValue(0);
+                        .HasDefaultValue(0)
+                        .HasColumnName("sign_count");
 
                     b.Property<int>("UserId")
-                        .HasColumnType("integer");
+                        .HasColumnType("integer")
+                        .HasColumnName("user_id");
 
                     b.HasKey("Id");
 

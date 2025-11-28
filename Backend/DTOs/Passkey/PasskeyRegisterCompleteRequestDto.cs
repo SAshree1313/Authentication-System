@@ -2,18 +2,19 @@ namespace Backend.DTOs.Passkey
 {
     public class PasskeyRegisterCompleteRequestDto
     {
-        public string ChallengeId { get; set; }
+        public string ChallengeId { get; set; } = string.Empty; // Used to retrieve challenge from server cache
 
         // Raw data returned by navigator.credentials.create()
-        public string Id { get; set; }
-        public string RawId { get; set; }
-        public AttestationResponseDto Response { get; set; }
-        public string Type { get; set; }
+        public string Id { get; set; } = string.Empty;
+        public string RawId { get; set; } = string.Empty;
+        public AttestationResponseDto Response { get; set; } = new AttestationResponseDto();
+        public string Type { get; set; } = string.Empty;
+        public string? DeviceName { get; set; } = null;
     }
 
     public class AttestationResponseDto
     {
-        public string ClientDataJSON { get; set; }
-        public string AttestationObject { get; set; }
+        public string ClientDataJSON { get; set; } = string.Empty;
+        public string AttestationObject { get; set; } = string.Empty;
     }
 }

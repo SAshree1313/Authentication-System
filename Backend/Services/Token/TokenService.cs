@@ -32,7 +32,8 @@ namespace Backend.Services.Token
 
             var claims = new List<Claim>
             {
-                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString())
+                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+                new Claim("id", user.Id.ToString())
             };
 
             if (!string.IsNullOrWhiteSpace(user.Email))

@@ -1,9 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "XED2tpGRDuDDe8f/Hm3sYnwWuyH2K+cVGuSZSZtfjU423kGbyc0grpDkg+SsCoBafYKQbRanLYW7Djyw+OX2CQ==",
+  "dgSpecHash": "CagCy5U+9qRbhH5QuT+q1thTlkuuGEvjjfVl8MPJPG020QzVqtd9yuHUa3fhQFm5kcXoIFo8XZRIu8PAzz+gJw==",
   "success": true,
   "projectFilePath": "C:\\Projects\\Authentication System\\Authentication-System\\Backend\\Backend.csproj",
   "expectedPackageFiles": [
+    "C:\\Users\\sashree\\.nuget\\packages\\bcrypt.net-next\\4.0.3\\bcrypt.net-next.4.0.3.nupkg.sha512",
     "C:\\Users\\sashree\\.nuget\\packages\\dotnetenv\\3.1.1\\dotnetenv.3.1.1.nupkg.sha512",
     "C:\\Users\\sashree\\.nuget\\packages\\fido2\\3.0.1\\fido2.3.0.1.nupkg.sha512",
     "C:\\Users\\sashree\\.nuget\\packages\\fido2.models\\3.0.1\\fido2.models.3.0.1.nupkg.sha512",

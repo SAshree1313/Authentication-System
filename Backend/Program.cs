@@ -3,84 +3,97 @@ using Microsoft.EntityFrameworkCore;
 using DotNetEnv;
 using FluentValidation;
 using FluentValidation.AspNetCore;
-using Microsoft.Extensions.DependencyInjection;
-using System.IO;
 using Backend.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
-using Backend.Services.Auth;
 using Backend.Services.Token;
 using Fido2NetLib;
-using Microsoft.Extensions.Caching.Memory;
 using Backend.Services.Passkey;
-
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load .env from the parent folder (project root)
-if (File.Exists(".env"))
+// 1. Load `.env` only when running locally
+// Detect local run (no Docker environment vars found)
+var isLocal = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"));
+
+if (isLocal)
 {
-    Env.Load();
+    // Look for .env in the project root (parent of Backend directory)
+    var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+    if (!File.Exists(envPath))
+    {
+        envPath = Path.Combine(Directory.GetCurrentDirectory(), "..", ".env");
+    }
+    
+    if (File.Exists(envPath))
+    {
+        Env.Load(envPath);   // overrides environment vars only locally
+    }
 }
 
-// Build PostgreSQL connection string from environment variables
-var dbName = Environment.GetEnvironmentVariable("POSTGRES_DB");
-var user = Environment.GetEnvironmentVariable("POSTGRES_USER");
-var password = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD");
+// 2. Read environment variables (these now include values from .env when local)
+string? dbName = Environment.GetEnvironmentVariable("POSTGRES_DB");
+string? dbUser = Environment.GetEnvironmentVariable("POSTGRES_USER");
+string? dbPassword = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD");
 
-var jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET");
-var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER");
-var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE");
+string? jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET");
+string? jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER");
+string? jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE");
 
-if (string.IsNullOrEmpty(jwtSecret))
-    throw new Exception("JWT_SECRET is not set in environment variables.");
-if (string.IsNullOrEmpty(jwtIssuer))
-    throw new Exception("JWT_ISSUER is not set in environment variables.");
-if (string.IsNullOrEmpty(jwtAudience))
-    throw new Exception("JWT_AUDIENCE is not set in environment variables.");
+// Validate JWT environment variables
+if (string.IsNullOrWhiteSpace(jwtSecret)) throw new Exception("JWT_SECRET is missing");
+if (string.IsNullOrWhiteSpace(jwtIssuer)) throw new Exception("JWT_ISSUER is missing");
+if (string.IsNullOrWhiteSpace(jwtAudience)) throw new Exception("JWT_AUDIENCE is missing");
 
-// Make JWT values available via IConfiguration for services like TokenService
+// Push into config for services
 builder.Configuration["Jwt:Secret"] = jwtSecret;
 builder.Configuration["Jwt:Issuer"] = jwtIssuer;
 builder.Configuration["Jwt:Audience"] = jwtAudience;
 
-var connectionString = $"Server=postgres;Port=5432;Database={dbName};Username={user};Password={password}";
+// 3. Build correct connection string for local or docker
+string connectionString;
 
-// Register DbContext with PostgreSQL
+if (isLocal)
+{
+    // Local PostgreSQL (typical default host name)
+    var host = Environment.GetEnvironmentVariable("POSTGRES_HOST") ?? "localhost";
+
+    connectionString =
+        $"Host={host};Port=5432;Database={dbName};Username={dbUser};Password={dbPassword}";
+}
+else
+{
+    // Docker Compose service name: postgres
+    connectionString =
+        $"Host=postgres;Port=5432;Database={dbName};Username={dbUser};Password={dbPassword}";
+}
+
+// 4. Register DbContext
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
 
-
-// Register Services
-builder.Services.AddScoped<IAuthService, AuthService>();
+// 5. Services
 builder.Services.AddScoped<ITokenService, TokenService>();
-
-//Register memory cache (required for WebAuthn challenge storage)
 builder.Services.AddMemoryCache();
 
-//Load FIDO2 configuration from appsettings.json
+// 6. FIDO2 config
 var fido2Section = builder.Configuration.GetSection("Fido2");
-var origin = fido2Section["Origin"] ?? "https://localhost:3000"; 
+var origin = fido2Section["Origin"] ?? "https://localhost:3000";
 var rpId = fido2Section["RpId"] ?? "localhost";
 
-//Register FIDO2 instance (Singleton)
-builder.Services.AddSingleton(sp =>
+builder.Services.AddSingleton(sp => new Fido2(new Fido2Configuration
 {
-    return new Fido2(new Fido2Configuration
-    {
-        ServerDomain = rpId,
-        ServerName = fido2Section["ServerName"] ?? "My Auth API",
-        Origins = new HashSet<string> { origin },
-        TimestampDriftTolerance = (int)long.Parse(fido2Section["TimestampDriftTolerance"] ?? "300000")
-    });
-});
+    ServerDomain = rpId,
+    ServerName = fido2Section["ServerName"] ?? "My Auth API",
+    Origins = new HashSet<string> { origin },
+    TimestampDriftTolerance = int.Parse(fido2Section["TimestampDriftTolerance"] ?? "300000")
+}));
 
-//Register Passkey Service
 builder.Services.AddScoped<IPasskeyService, PasskeyService>();
 
-//Add JWT Authentication
-var key = Encoding.UTF8.GetBytes(jwtSecret!);
+// 7. JWT Setup
+var key = Encoding.UTF8.GetBytes(jwtSecret);
 
 builder.Services.AddAuthentication(options =>
 {
@@ -95,27 +108,30 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-
         ValidIssuer = jwtIssuer,
         ValidAudience = jwtAudience,
         IssuerSigningKey = new SymmetricSecurityKey(key)
     };
 });
 
-// CORS — allow frontend to call backend
+// 8. CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:3000") // frontend origin
+        policy.WithOrigins("http://localhost:3000")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
     });
 });
 
-//Add Controllers + Swaggers + Validators
-builder.Services.AddControllers();
+// MVC + Validators + Swagger
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddFluentValidationAutoValidation();
@@ -123,27 +139,20 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
 var app = builder.Build();
 
-//Set-up Middlewares
+// 9. Middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
-if (!app.Environment.IsDevelopment())
+else
 {
     app.UseHttpsRedirection();
 }
 
-app.UseCors("AllowFrontend"); // <-- enable CORS
-
-//Error Handling Before Auth
+app.UseCors("AllowFrontend");
 app.UseMiddleware<ErrorHandlingMiddleware>();
-
-
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
-
 app.Run();

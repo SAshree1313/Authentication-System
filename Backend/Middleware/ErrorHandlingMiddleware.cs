@@ -47,6 +47,27 @@ namespace Backend.Middleware
                     };
                     break;
 
+                    case ApiException apiEx:
+                    if (apiEx.Message.StartsWith("COOLDOWN:"))
+                    {
+                        statusCode = HttpStatusCode.TooManyRequests; // 429
+
+                        var secs = apiEx.Message.Replace("COOLDOWN:", "");
+                        int seconds = int.TryParse(secs, out var s) ? s : 300;
+
+                        errorResponse = new
+                        {
+                            message = "Too many failed attempts",
+                            cooldownSeconds = seconds
+                        };
+                    }
+                    else
+                    {
+                        statusCode = HttpStatusCode.BadRequest;
+                        errorResponse = new { message = apiEx.Message };
+                    }
+                    break;
+
                 case DuplicateEmailException:
                     statusCode = HttpStatusCode.Conflict; // 409
                     errorResponse = new { message = exception.Message };

@@ -1,13 +1,17 @@
 using Backend.Data;
 using Backend.DTOs.Passkey;
+using Backend.DTOs.Recovery;
+using Backend.DTOs.MultiDevice;
 using Backend.Exceptions;
 using Backend.Helpers;
 using Backend.Models;
 using Backend.Services.Token;
 using Fido2NetLib;
 using Fido2NetLib.Objects;
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using System.Text;
 
 namespace Backend.Services.Passkey
 {
@@ -17,61 +21,81 @@ namespace Backend.Services.Passkey
         private readonly Fido2 _fido2;
         private readonly IMemoryCache _cache;
         private readonly ITokenService _tokenService;
+        private readonly IValidator<PasskeyRegisterBeginRequestDto> _registerValidator;
+        private readonly IValidator<PasskeyLoginBeginRequestDto> _loginValidator;
 
-        public PasskeyService(AppDbContext context, Fido2 fido2, IMemoryCache cache, ITokenService tokenService)
+        private static readonly TimeSpan _challengeTtl = TimeSpan.FromMinutes(5);
+
+        public PasskeyService(
+            AppDbContext context,
+            Fido2 fido2,
+            IMemoryCache cache,
+            ITokenService tokenService,
+            IValidator<PasskeyRegisterBeginRequestDto> registerValidator,
+            IValidator<PasskeyLoginBeginRequestDto> loginValidator)
         {
             _context = context;
             _fido2 = fido2;
             _cache = cache;
             _tokenService = tokenService;
+            _registerValidator = registerValidator;
+            _loginValidator = loginValidator;
         }
 
-        // ---------------------------------------------------------
-        // BEGIN PASSKEY REGISTRATION
-        // ---------------------------------------------------------
+        // -------------------------------------------------------
+        // Internal Session Objects
+        // -------------------------------------------------------
+        private class RegistrationSession
+        {
+            public CredentialCreateOptions Options { get; set; } = null!;
+            public string Name { get; set; } = string.Empty;
+            public string Email { get; set; } = string.Empty;
+        }
+
+        private class LoginSession
+        {
+            public AssertionOptions Options { get; set; } = null!;
+            public int UserId { get; set; }
+        }
+
+        private class RecoverySession
+        {
+            
+            public int Step { get; set; }      // 1 = verify code, 2 = register passkey
+            public int UserId { get; set; }
+            public string Email { get; set; } = string.Empty;
+            public CredentialCreateOptions? Options { get; set; }  // Only used in Step 2
+        }
+
+        // -------------------------------------------------------
+        // PASSKEY REGISTRATION
+        // -------------------------------------------------------
         public async Task<PasskeyRegisterBeginResponseDto> RegisterBeginAsync(PasskeyRegisterBeginRequestDto request)
         {
-            // 1️⃣ Validate user
-            var user = await _context.Users
-                .Include(u => u.WebAuthnCredentials)
-                .FirstOrDefaultAsync(u => u.Id == request.UserId);
+            var validation = await _registerValidator.ValidateAsync(request);
+            if (!validation.IsValid)
+                throw new ValidationException(validation.Errors);
 
-            if (user == null)
-                throw new UserNotFoundException($"User with ID {request.UserId} not found.");
+            if (await _context.Users.AnyAsync(u => u.Email == request.Email))
+                throw new DuplicateEmailException("Email already exists.");
 
-            // 2️⃣ Convert user → Fido2User
             var fidoUser = new Fido2User
             {
-                Id = BitConverter.GetBytes(user.Id),
-                Name = user.Email,
-                DisplayName = user.Name
+                Id = Guid.NewGuid().ToByteArray(),
+                Name = request.Email,
+                DisplayName = request.Name
             };
 
-            // 3️⃣ Convert existing credentials to FIDO2 descriptors
-            var existingCredentials = user.WebAuthnCredentials.Select(c =>
-                new PublicKeyCredentialDescriptor(
-                    Base64UrlHelper.Decode(c.CredentialId)
-                )
-            ).ToList();
+            var options = _fido2.RequestNewCredential(fidoUser, new List<PublicKeyCredentialDescriptor>());
 
-            // 4️⃣ Create registration options
-            CredentialCreateOptions options;
-            try
-            {
-                options = _fido2.RequestNewCredential(fidoUser, existingCredentials);
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"FIDO2 failed to generate registration options: {ex.Message}");
-            }
-
-            // 5️⃣ Generate challengeId
             var challengeId = Guid.NewGuid().ToString();
+            _cache.Set(challengeId, new RegistrationSession
+            {
+                Options = options,
+                Name = request.Name,
+                Email = request.Email
+            }, _challengeTtl);
 
-            // 6️⃣ Store challenge (RAM, 5 min)
-            _cache.Set(challengeId, options, TimeSpan.FromMinutes(5));
-
-            // 7️⃣ Return to frontend
             return new PasskeyRegisterBeginResponseDto
             {
                 Options = options,
@@ -79,18 +103,14 @@ namespace Backend.Services.Passkey
             };
         }
 
-        // ---------------------------------------------------------
-        // COMPLETE PASSKEY REGISTRATION
-        // ---------------------------------------------------------
         public async Task<PasskeyRegisterCompleteResponseDto> RegisterCompleteAsync(PasskeyRegisterCompleteRequestDto request)
         {
-            // 1️⃣ Validate challenge existence
-            if (!_cache.TryGetValue<CredentialCreateOptions>(request.ChallengeId, out var options) || options == null)
-                throw new NotFoundException("Passkey challenge expired or not found.");
+            if (!_cache.TryGetValue<RegistrationSession>(request.ChallengeId, out var session))
+                throw new NotFoundException("Passkey challenge expired.");
 
-            _cache.Remove(request.ChallengeId); // one-use
+            // Optional: remove challenge to prevent replay. You already did this; safe to do before attestation.
+            _cache.Remove(request.ChallengeId);
 
-            // 2️⃣ Build FIDO2 attestation response
             var attestationResponse = new AuthenticatorAttestationRawResponse
             {
                 Id = Base64UrlHelper.Decode(request.RawId),
@@ -103,88 +123,124 @@ namespace Backend.Services.Passkey
                 }
             };
 
-            // 3️⃣ Validate attestation
-            Fido2.CredentialMakeResult result;
+            var makeResult = await _fido2.MakeNewCredentialAsync(
+                attestationResponse,
+                session.Options!,
+                async (args, ct) =>
+                {
+                    var id = Base64UrlHelper.Encode(args.CredentialId);
+                    return !await _context.WebAuthnCredentials.AnyAsync(c => c.CredentialId == id);
+                });
+
+            if (makeResult?.Result == null)
+                throw new Exception("Attestation failed."); // consider a more specific exception
+
+            // Double-check that email hasn't been registered between begin and complete
+            if (await _context.Users.AnyAsync(u => u.Email == session.Email))
+                throw new DuplicateEmailException("Email already exists.");
+
+            // Use transaction to ensure user + credential are saved atomically
+            await using var txn = await _context.Database.BeginTransactionAsync();
+
             try
             {
-                result = await _fido2.MakeNewCredentialAsync(
-                    attestationResponse, 
-                    options ?? throw new InvalidOperationException("Options cannot be null"),
-                    async (args, ct) =>
-                    {
-                        // Check if this credential already exists
-                        var credentialIdString = Base64UrlHelper.Encode(args.CredentialId);
-                        var exists = await _context.WebAuthnCredentials
-                            .AnyAsync(c => c.CredentialId == credentialIdString);
-                        return !exists; // Return true if credential is unique to this user
-                    }
-                );
+                // Create user
+                var recoveryCode = RecoveryCodeHelper.GenerateRecoveryCode();
+
+                var user = new User
+                {
+                    Name = session.Name,
+                    Email = session.Email,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    RecoveryCodeHash = RecoveryCodeHelper.HashRecoveryCode(recoveryCode),
+                    RecoveryCodeCreatedAt = DateTime.UtcNow
+                };
+
+                _context.Users.Add(user);
+                await _context.SaveChangesAsync();
+
+                // Save credential with optional device name
+                var credential = new WebAuthnCredential
+                {
+                    UserId = user.Id,
+                    CredentialId = Base64UrlHelper.Encode(makeResult.Result.CredentialId),
+                    PublicKey = Base64UrlHelper.Encode(makeResult.Result.PublicKey),
+                    SignCount = (int)makeResult.Result.Counter,
+                    CreatedAt = DateTime.UtcNow,
+                    DeviceName = string.IsNullOrWhiteSpace(request.DeviceName) ? null : request.DeviceName
+                };
+
+                _context.WebAuthnCredentials.Add(credential);
+                await _context.SaveChangesAsync();
+
+                // Commit transaction
+                await txn.CommitAsync();
+
+                var token = _tokenService.GenerateToken(user);
+
+                return new PasskeyRegisterCompleteResponseDto
+                {
+                    UserId = user.Id,
+                    CredentialId = credential.CredentialId,
+                    Token = token,
+                    RecoveryCode = recoveryCode,
+                    Success = true,
+                    Message = "Passkey registered successfully."
+                };
             }
-            catch (Exception ex)
+            catch
             {
-                throw new Exception($"Failed to verify passkey attestation: {ex.Message}");
+                await txn.RollbackAsync();
+                throw; // bubble up so middleware will convert into proper HTTP response
             }
-
-            // 4️⃣ Extract data
-            if (result?.Result == null)
-                throw new Exception("Attestation result is null.");
-                
-            var credentialId = Base64UrlHelper.Encode(result.Result.CredentialId);
-            var publicKey = Base64UrlHelper.Encode(result.Result.PublicKey);
-            var signCount = (int)result.Result.Counter;
-
-            // 5️⃣ Get userId from challenge
-            if (options?.User?.Id == null || options.User.Id.Length < 4)
-                throw new Exception("Invalid user ID in challenge options.");
-                
-            var userId = BitConverter.ToInt32(options.User.Id, 0);
-
-            // 6️⃣ Save credential
-            var credential = new WebAuthnCredential
-            {
-                UserId = userId,
-                CredentialId = credentialId,
-                PublicKey = publicKey,
-                SignCount = signCount
-            };
-
-            _context.WebAuthnCredentials.Add(credential);
-            await _context.SaveChangesAsync();
-
-            // 7️⃣ Return result
-            return new PasskeyRegisterCompleteResponseDto
-            {
-                UserId = userId,
-                CredentialId = credentialId,
-                Success = true,
-                Message = "Passkey registered successfully."
-            };
         }
 
-        // ---------------------------------------------------------
-        // BEGIN PASSKEY LOGIN
-        // ---------------------------------------------------------
-        public async Task<PasskeyLoginBeginResponseDto> LoginBeginAsync()
+        // -------------------------------------------------------
+        // PASSKEY LOGIN
+        // -------------------------------------------------------
+        public async Task<PasskeyLoginBeginResponseDto> LoginBeginAsync(PasskeyLoginBeginRequestDto request)
         {
-            // 1️⃣ Generate assertion options for discoverable credentials
-            AssertionOptions options;
-            try
+            var validation = await _loginValidator.ValidateAsync(request);
+            if (!validation.IsValid)
+                throw new ValidationException(validation.Errors);
+
+            // ============================
+            // COOLDOWN CHECK (NEW)
+            // ============================
+            if (LoginRateLimiterHelper.IsCooldownActive(_cache, request.Email, out var secs))
+                throw new ApiException($"COOLDOWN:{secs}");
+
+            var user = await _context.Users
+                .Include(u => u.WebAuthnCredentials)
+                .FirstOrDefaultAsync(u => u.Email == request.Email);
+
+            if (user == null)
             {
-                options = _fido2.GetAssertionOptions(
-                    allowedCredentials: new List<PublicKeyCredentialDescriptor>(),
-                    userVerification: UserVerificationRequirement.Required
-                );
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Failed to generate login assertion options: {ex.Message}");
+                // Count fails for unknown email as well
+                LoginRateLimiterHelper.IncrementFailCount(_cache, request.Email);
+                throw new UserNotFoundException("User not found.");
             }
 
-            // 2️⃣ Save challenge in RAM
+            if (!user.WebAuthnCredentials.Any())
+            {
+                LoginRateLimiterHelper.IncrementFailCount(_cache, request.Email);
+                throw new InvalidOperationException("No passkeys registered.");
+            }
+
+            var allowedCreds = user.WebAuthnCredentials
+                .Select(c => new PublicKeyCredentialDescriptor(Base64UrlHelper.Decode(c.CredentialId)))
+                .ToList();
+
+            var options = _fido2.GetAssertionOptions(allowedCreds, UserVerificationRequirement.Required);
+
             var challengeId = Guid.NewGuid().ToString();
-            _cache.Set(challengeId, options, TimeSpan.FromMinutes(5));
+            _cache.Set(challengeId, new LoginSession
+            {
+                Options = options,
+                UserId = user.Id
+            }, _challengeTtl);
 
-            // 3️⃣ Return to frontend
             return new PasskeyLoginBeginResponseDto
             {
                 Options = options,
@@ -192,111 +248,407 @@ namespace Backend.Services.Passkey
             };
         }
 
-        // ---------------------------------------------------------
-        // COMPLETE PASSKEY LOGIN
-        // ---------------------------------------------------------
         public async Task<PasskeyLoginCompleteResponseDto> LoginCompleteAsync(PasskeyLoginCompleteRequestDto request)
         {
-            // 1️⃣ Validate challenge exists
-            if (!_cache.TryGetValue<AssertionOptions>(request.ChallengeId, out var options))
-                throw new NotFoundException("Passkey challenge expired or not found.");
-            _cache.Remove(request.ChallengeId); // one-use
+            if (!_cache.TryGetValue<LoginSession>(request.ChallengeId, out var session))
+                throw new NotFoundException("Login session expired.");
 
-            // 2️⃣ Build FIDO2 assertion response
-            var assertionResponse = new AuthenticatorAssertionRawResponse
+            _cache.Remove(request.ChallengeId);
+
+            var credentialIdString = Base64UrlHelper.Encode(Base64UrlHelper.Decode(request.RawId));
+
+            var credential = await _context.WebAuthnCredentials
+                .Include(c => c.User)
+                .FirstOrDefaultAsync(c => c.CredentialId == credentialIdString);
+
+            if (credential == null || credential.UserId != session.UserId)
             {
-                Id = Base64UrlHelper.Decode(request.RawId),
+                // Count failed attempts
+                var email = await _context.Users.Where(u => u.Id == session.UserId).Select(u => u.Email).FirstOrDefaultAsync();
+                if (email != null)
+                    LoginRateLimiterHelper.IncrementFailCount(_cache, email);
+
+                throw new InvalidCredentialsException("Invalid credentials.");
+            }
+
+            // Verify FIDO2 assertion...
+            var assertion = new AuthenticatorAssertionRawResponse 
+            { Id = Base64UrlHelper.Decode(request.RawId),
                 RawId = Base64UrlHelper.Decode(request.RawId),
-                Type = PublicKeyCredentialType.PublicKey
-            };
-            
-            // Initialize response if null, then set properties
-            if (assertionResponse.Response == null)
-            {
-                assertionResponse.Response = new AuthenticatorAssertionRawResponse.AssertionResponse();
-            }
-            
-            assertionResponse.Response.AuthenticatorData = Base64UrlHelper.Decode(request.Response.AuthenticatorData);
-            assertionResponse.Response.ClientDataJson = Base64UrlHelper.Decode(request.Response.ClientDataJSON);
-            assertionResponse.Response.Signature = Base64UrlHelper.Decode(request.Response.Signature);
-            assertionResponse.Response.UserHandle = !string.IsNullOrEmpty(request.Response.UserHandle)
-                ? Base64UrlHelper.Decode(request.Response.UserHandle)
-                : null;
-
-            // 3️⃣ Validate assertion with FIDO2
-            WebAuthnCredential? credentialEntity;
-            AssertionVerificationResult result;
-            try
-            {
-                var credentialIdString = Base64UrlHelper.Encode(assertionResponse.Id);
-                credentialEntity = await _context.WebAuthnCredentials
-                    .Include(c => c.User)
-                    .FirstOrDefaultAsync(c => c.CredentialId == credentialIdString);
-
-                if (credentialEntity == null)
-                    throw new InvalidCredentialsException("Assertion failed: unknown credential.");
-
-                var publicKeyBytes = Base64UrlHelper.Decode(credentialEntity.PublicKey);
-                var storedCounter = (uint)credentialEntity.SignCount;
-
-                result = await _fido2.MakeAssertionAsync(
-                    assertionResponse,
-                    options ?? throw new InvalidOperationException("Options cannot be null"),
-                    publicKeyBytes,
-                    storedCounter,
-                    (userHandleOwner, credentialId) =>
-                    {
-                        return Task.FromResult(credentialEntity.UserId > 0);
-                    });
-
-                if (result.CredentialId == null)
-                    throw new InvalidCredentialsException("Assertion failed: unknown credential.");
-            }
-            catch (InvalidCredentialsException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Failed to verify passkey assertion: {ex.Message}");
-            }
-
-            // 4️⃣ Update sign count safely
-            try
-            {
-                if (credentialEntity != null)
+                Type = PublicKeyCredentialType.PublicKey,
+                Response = new AuthenticatorAssertionRawResponse.AssertionResponse
                 {
-                    credentialEntity.SignCount = (int)result.Counter;
-                    await _context.SaveChangesAsync();
-                }
-            }
-            catch (Exception ex)
+                    AuthenticatorData = Base64UrlHelper.Decode(request.Response.AuthenticatorData),
+                    ClientDataJson = Base64UrlHelper.Decode(request.Response.ClientDataJSON),
+                    Signature = Base64UrlHelper.Decode(request.Response.Signature),
+                    UserHandle = string.IsNullOrWhiteSpace(request.Response.UserHandle)
+                        ? null
+                        : Base64UrlHelper.Decode(request.Response.UserHandle)
+                } };
+
+            var result = await _fido2.MakeAssertionAsync(
+                assertion,
+                session.Options,
+                Base64UrlHelper.Decode(credential.PublicKey),
+                (uint)credential.SignCount,
+                (handle, id) => Task.FromResult(true));
+
+            if (result?.CredentialId == null)
             {
-                throw new Exception($"Failed to update credential sign count: {ex.Message}");
+                LoginRateLimiterHelper.IncrementFailCount(_cache, credential.User!.Email);
+                throw new InvalidCredentialsException("Assertion failed.");
             }
 
-            // 5️⃣ Generate JWT token
-            string jwt;
-            try
-            {
-                if (credentialEntity?.User == null)
-                    throw new InvalidOperationException("User not found for credential.");
-                    
-                jwt = _tokenService.GenerateToken(credentialEntity.User);
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Failed to generate JWT token: {ex.Message}");
-            }
+            // SUCCESS → RESET FAIL COUNT
+            LoginRateLimiterHelper.ResetFailCount(_cache, credential.User!.Email);
 
-            // 6️⃣ Return result
+            credential.SignCount = (int)result.Counter;
+            credential.LastUsedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            var token = _tokenService.GenerateToken(credential.User);
+
             return new PasskeyLoginCompleteResponseDto
             {
-                UserId = credentialEntity.UserId,
-                Token = jwt,
+                UserId = credential.UserId,
+                Token = token,
                 Success = true,
                 Message = "Passkey login successful."
             };
         }
+
+
+        // -------------------------------------------------------
+        // PASSKEY RECOVERY
+        // -------------------------------------------------------
+        public async Task<PasskeyRecoveryBeginResponseDto> RecoveryBeginAsync(PasskeyRecoveryBeginRequestDto request)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+
+            if (user == null)
+                throw new UserNotFoundException("Invalid recovery attempt.");
+
+            var challengeId = Guid.NewGuid().ToString();
+
+            _cache.Set(challengeId, new RecoverySession
+            {
+                Step = 1,
+                UserId = user.Id,
+                Email = user.Email
+            }, _challengeTtl);
+
+            return new PasskeyRecoveryBeginResponseDto
+            {
+                Success = true,
+                ChallengeId = challengeId
+            };
+        }
+
+        public async Task<PasskeyRecoveryVerifyCodeResponseDto> RecoveryVerifyCodeAsync(PasskeyRecoveryVerifyCodeRequestDto request)
+        {
+            if (!_cache.TryGetValue<RecoverySession>(request.ChallengeId, out var session) || session.Step != 1)
+                throw new NotFoundException("Recovery session expired.");
+
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == session.UserId);
+
+            if (user == null)
+                throw new UserNotFoundException("User not found.");
+
+            if (string.IsNullOrEmpty(user.RecoveryCodeHash) || 
+                !RecoveryCodeHelper.VerifyRecoveryCode(request.RecoveryCode, user.RecoveryCodeHash))
+                throw new InvalidCredentialsException("Invalid recovery code.");
+
+            // Prepare FIDO2 options
+            var fidoUser = new Fido2User
+            {
+                Id = Guid.NewGuid().ToByteArray(),
+                Name = user.Email,
+                DisplayName = user.Name
+            };
+
+            var options = _fido2.RequestNewCredential(fidoUser, new List<PublicKeyCredentialDescriptor>());
+
+            var newChallengeId = Guid.NewGuid().ToString();
+
+            _cache.Set(newChallengeId, new RecoverySession
+            {
+                Step = 2,
+                UserId = user.Id,
+                Email = user.Email,
+                Options = options
+            }, _challengeTtl);
+
+            return new PasskeyRecoveryVerifyCodeResponseDto
+            {
+                ChallengeId = newChallengeId,
+                Options = options
+            };
+        }
+
+        public async Task<PasskeyRecoveryCompleteResponseDto> RecoveryCompleteAsync(PasskeyRecoveryCompleteRequestDto request)
+        {
+            if (!_cache.TryGetValue<RecoverySession>(request.ChallengeId, out var session) || session.Step != 2)
+                throw new NotFoundException("Recovery session expired.");
+
+            _cache.Remove(request.ChallengeId);
+
+            var user = await _context.Users
+                .Include(u => u.WebAuthnCredentials)
+                .FirstOrDefaultAsync(u => u.Id == session.UserId);
+
+            if (user == null)
+                throw new UserNotFoundException("User not found.");
+
+            var attestation = new AuthenticatorAttestationRawResponse
+            {
+                Id = Base64UrlHelper.Decode(request.RawId),
+                RawId = Base64UrlHelper.Decode(request.RawId),
+                Type = PublicKeyCredentialType.PublicKey,
+                Response = new AuthenticatorAttestationRawResponse.ResponseData
+                {
+                    AttestationObject = Base64UrlHelper.Decode(request.Response.AttestationObject),
+                    ClientDataJson = Base64UrlHelper.Decode(request.Response.ClientDataJSON)
+                }
+            };
+
+            var makeResult = await _fido2.MakeNewCredentialAsync(
+                attestation,
+                session.Options!,
+                async (args, ct) =>
+                {
+                    var id = Base64UrlHelper.Encode(args.CredentialId);
+                    return !await _context.WebAuthnCredentials.AnyAsync(c => c.CredentialId == id);
+                });
+
+            if (makeResult?.Result == null)
+                throw new Exception("Passkey creation failed.");
+
+            // Remove old devices
+            _context.WebAuthnCredentials.RemoveRange(user.WebAuthnCredentials);
+
+            // Add new device
+            var credential = new WebAuthnCredential
+            {
+                UserId = user.Id,
+                CredentialId = Base64UrlHelper.Encode(makeResult.Result.CredentialId),
+                PublicKey = Base64UrlHelper.Encode(makeResult.Result.PublicKey),
+                SignCount = (int)makeResult.Result.Counter,
+                CreatedAt = DateTime.UtcNow,
+                DeviceName = string.IsNullOrWhiteSpace(request.DeviceName) ? null : request.DeviceName
+            };
+
+            _context.WebAuthnCredentials.Add(credential);
+
+            // Generate new recovery key
+            var newCode = RecoveryCodeHelper.GenerateRecoveryCode();
+            user.RecoveryCodeHash = RecoveryCodeHelper.HashRecoveryCode(newCode);
+            user.RecoveryCodeCreatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            return new PasskeyRecoveryCompleteResponseDto
+            {
+                Success = true,
+                Message = "Passkey successfully recovered.",
+                NewRecoveryCode = newCode
+            };
+        }
+
+        //---------------------------------------------------------------------------------------------------
+        // MULTI-DEVICE MANAGEMENT
+        //---------------------------------------------------------------------------------------------------
+        // Get all devices for logged-in user
+        public async Task<PasskeyDeviceListResponseDto> GetDevicesAsync(int userId)
+        {
+            var devices = await _context.WebAuthnCredentials
+                .Where(c => c.UserId == userId)
+                .OrderBy(c => c.CreatedAt)
+                .Select(c => new PasskeyDeviceDto
+                {
+                    CredentialId = c.CredentialId,
+                    DeviceName = c.DeviceName,
+                    CreatedAt = c.CreatedAt,
+                    LastUsedAt = c.LastUsedAt
+                }).ToListAsync();
+
+            return new PasskeyDeviceListResponseDto
+            {
+                Devices = devices
+            };
+        }
+
+        // Update device name
+        public async Task<PasskeyDeviceDto> UpdateDeviceNameAsync(int userId, string credentialId, string deviceName)
+        {
+            var device = await _context.WebAuthnCredentials
+                .FirstOrDefaultAsync(c => c.CredentialId == credentialId && c.UserId == userId);
+
+            if (device == null) throw new NotFoundException("Device not found.");
+
+            device.DeviceName = deviceName;
+            await _context.SaveChangesAsync();
+
+            return new PasskeyDeviceDto
+            {
+                CredentialId = device.CredentialId,
+                DeviceName = device.DeviceName,
+                CreatedAt = device.CreatedAt,
+                LastUsedAt = device.LastUsedAt
+            };
+        }
+
+        // Delete device
+        public async Task DeleteDeviceAsync(int userId, string credentialId)
+        {
+            var device = await _context.WebAuthnCredentials
+                .FirstOrDefaultAsync(c => c.CredentialId == credentialId && c.UserId == userId);
+
+            if (device == null) throw new NotFoundException("Device not found.");
+
+            _context.WebAuthnCredentials.Remove(device);
+            await _context.SaveChangesAsync();
+        }
+        // -------------------------
+        // Add Device (Begin)
+        // -------------------------
+        public async Task<PasskeyRegisterBeginResponseDto> AddDeviceBeginAsync(int userId)
+        {
+            var user = await _context.Users
+                .Include(u => u.WebAuthnCredentials)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null) throw new UserNotFoundException("User not found.");
+
+            var fidoUser = new Fido2User
+            {
+                Id = Encoding.UTF8.GetBytes(user.Id.ToString()),
+                Name = user.Email,
+                DisplayName = user.Name
+            };
+
+            var existingCreds = user.WebAuthnCredentials
+                .Select(c => new PublicKeyCredentialDescriptor(Base64UrlHelper.Decode(c.CredentialId)))
+                .ToList();
+
+            var options = _fido2.RequestNewCredential(fidoUser, existingCreds);
+
+            var challengeId = Guid.NewGuid().ToString();
+            _cache.Set(challengeId, new RegistrationSession { Options = options }, _challengeTtl);
+
+            return new PasskeyRegisterBeginResponseDto { Options = options, ChallengeId = challengeId };
+        }
+
+        // -------------------------
+        // Add Device (Complete)
+        // -------------------------
+        public async Task<PasskeyRegisterCompleteResponseDto> AddDeviceCompleteAsync(int userId, PasskeyRegisterCompleteRequestDto request)
+        {
+            if (!_cache.TryGetValue<RegistrationSession>(request.ChallengeId, out var session))
+                throw new NotFoundException("Passkey challenge expired.");
+
+            _cache.Remove(request.ChallengeId);
+
+            var attestationResponse = new AuthenticatorAttestationRawResponse
+            {
+                Id = Base64UrlHelper.Decode(request.RawId),
+                RawId = Base64UrlHelper.Decode(request.RawId),
+                Type = PublicKeyCredentialType.PublicKey,
+                Response = new AuthenticatorAttestationRawResponse.ResponseData
+                {
+                    AttestationObject = Base64UrlHelper.Decode(request.Response.AttestationObject),
+                    ClientDataJson = Base64UrlHelper.Decode(request.Response.ClientDataJSON)
+                }
+            };
+
+            var makeResult = await _fido2.MakeNewCredentialAsync(
+                attestationResponse,
+                session.Options!,
+                async (args, ct) =>
+                {
+                    var id = Base64UrlHelper.Encode(args.CredentialId);
+                    return !await _context.WebAuthnCredentials.AnyAsync(c => c.CredentialId == id);
+                });
+
+            if (makeResult?.Result == null)
+                throw new Exception("Attestation failed.");
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null) throw new UserNotFoundException("User not found.");
+
+            var credential = new WebAuthnCredential
+            {
+                UserId = user.Id,
+                CredentialId = Base64UrlHelper.Encode(makeResult.Result.CredentialId),
+                PublicKey = Base64UrlHelper.Encode(makeResult.Result.PublicKey),
+                SignCount = (int)makeResult.Result.Counter,
+                CreatedAt = DateTime.UtcNow,
+                DeviceName = string.IsNullOrWhiteSpace(request.DeviceName) ? null : request.DeviceName
+            };
+
+            _context.WebAuthnCredentials.Add(credential);
+            await _context.SaveChangesAsync();
+
+            var token = _tokenService.GenerateToken(user);
+
+            return new PasskeyRegisterCompleteResponseDto
+            {
+                UserId = user.Id,
+                CredentialId = credential.CredentialId,
+                Token = token,
+                Success = true,
+                Message = "Device added successfully."
+            };
+        }
+
+
+        //--------------------------------------------------------------------------------------------------
+        // DELETE ACCOUNT
+        //--------------------------------------------------------------------------------------------------
+        public async Task DeleteAccountAsync(int userId)
+        {
+            var user = await _context.Users
+                .Include(u => u.WebAuthnCredentials)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null)
+                throw new UserNotFoundException("User not found.");
+
+            // Remove all passkeys
+            _context.WebAuthnCredentials.RemoveRange(user.WebAuthnCredentials);
+
+            // Remove user
+            _context.Users.Remove(user);
+
+            await _context.SaveChangesAsync();
+        }
+
+        // --------------------------------------------------------------------------------------------------
+        // PROFILE
+        // -----------------------------------------------------------------------------------------------------
+        public async Task<UserProfileResponseDto> GetProfileAsync(int userId)
+        {
+            var user = await _context.Users
+                .Include(u => u.WebAuthnCredentials)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null)
+                throw new UserNotFoundException("User not found.");
+
+            return new UserProfileResponseDto
+            {
+                Id = user.Id,
+                Name = user.Name,
+                Email = user.Email,
+                HasPasskey = user.WebAuthnCredentials.Any()
+            };
+        }
+
     }
 }
+
+
+
+
+
+
+

@@ -1,7 +1,8 @@
-using Backend.DTOs.Register;
-using Backend.Services.Auth;
+//using Backend.DTOs.Register;
+//using Backend.Services.Auth;
+using Backend.Services.Passkey; 
 using Microsoft.AspNetCore.Mvc;
-using Backend.DTOs.Login;
+//using Backend.DTOs.Login;
 using Backend.Helpers;
 using Microsoft.AspNetCore.Authorization;
 
@@ -11,28 +12,35 @@ namespace Backend.Controllers
     [Route("api/auth")]
     public class AuthController : ControllerBase
     {
-        private readonly IAuthService _authService;
+        private readonly IPasskeyService _passkeyService;
 
-        public AuthController(IAuthService authService)
+        public AuthController(IPasskeyService passkeyService)
         {
-            _authService = authService;
+            _passkeyService = passkeyService;
         }
+
+        // private readonly IAuthService _authService;
+
+        // public AuthController(IAuthService authService)
+        // {
+        //     _authService = authService;
+        // }
 
         // -----------------------------------------------------------
         //  POST: /api/auth/register
-        [HttpPost("register")]
-        public async Task<IActionResult> Register([FromBody] RegisterRequestDto request)
-        {
-            var response = await _authService.RegisterAsync(request);
-            return Ok(response);
-        }
+        // [HttpPost("register")]
+        // public async Task<IActionResult> Register([FromBody] RegisterRequestDto request)
+        // {
+        //     var response = await _authService.RegisterAsync(request);
+        //     return Ok(response);
+        // }
 
-        [HttpPost("login")]
-        public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
-        {
-            var response = await _authService.LoginAsync(request);
-            return Ok(response);
-        }
+        // [HttpPost("login")]
+        // public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
+        // {
+        //     var response = await _authService.LoginAsync(request);
+        //     return Ok(response);
+        // }
 
         [Authorize]
         [HttpGet("me")]
@@ -43,7 +51,8 @@ namespace Backend.Controllers
             if (userId == null)
                 return Unauthorized();
 
-            var profile = await _authService.GetProfileAsync(userId.Value);
+            var profile = await _passkeyService.GetProfileAsync(userId.Value);
+            //var profile = await _authService.GetProfileAsync(userId.Value);
 
             return Ok(profile);
         }

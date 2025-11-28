@@ -14,11 +14,11 @@ export default function ProtectedRoute({ children }) {
     );
   }
 
-  // If no token or no user → redirect to login
+  // If no token or no user → redirect to login 
   if (!token || !user) {
     return <Navigate to="/login" replace />;
   }
-
+  
   // Otherwise show the protected page
   return children;
 }

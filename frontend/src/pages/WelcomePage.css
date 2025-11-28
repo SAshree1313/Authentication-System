@@ -1,64 +1,254 @@
-/* Page background */
+/* ------------------------- */
+/* Welcome/Security Page Container */
+/* ------------------------- */
 .welcome-container {
-  background: #f6f8fa;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
+  min-height: 100vh;           /* Full viewport height */
+  width: 100%;
+  padding: 40px 20px;          /* leave small gap on sides */
+  background-color: #f6f8fa;   /* soft light background, GitHub style */
+  color: #24292f;              /* main text color */
+  font-family: "Segoe UI", sans-serif;
+  box-sizing: border-box;
+  user-select: none;
 }
 
-/* Top right navigation */
-.welcome-nav {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 24px;
+/* ------------------------- */
+/* Headings and messages */
+/* ------------------------- */
+h1 {
+  font-size: 28px;
+  margin-bottom: 20px;
+  color: #24292f;
 }
 
-/* Generate Passkey button (Primary) */
-.btn-generate {
-  background: #343434;
-  color: white;
-  padding: 8px 14px;
+.error-message {
+  color: #cf222e;
+  margin-bottom: 20px;
+  font-weight: 500;
+}
+
+/* ------------------------- */
+/* Device table */
+/* ------------------------- */
+.device-table {
+  width: calc(100% - 40px);    /* leave 20px gap on left/right */
+  margin: 0 auto 20px auto;    /* center table */
+  border-collapse: separate;
+  border-spacing: 0 6px;       /* small gap between rows */
+}
+
+.device-table th,
+.device-table td {
+  padding: 12px 15px;
+  text-align: left;
+}
+
+.device-table th {
+  color: #57606a;
+  font-weight: 600;
+  border-bottom: 2px solid #d0d7de;
+  background-color: #f6f8fa;
+}
+
+.device-table td {
+  background-color: #ffffff;
+  color: #24292f;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+
+/* device name inline input */
+.device-table input[type="text"] {
+  padding: 6px 5px;
+  border-radius: 6px;
+  border: 1px solid #d0d7de;
+  background-color: #ffffff;
+  color: #24292f;
+  width: 100%;
+  font-size: 14px;
+}
+
+.device-cell span {
+  font-weight: 500;
+}
+
+/* ------------------------- */
+/* Buttons */
+/* ------------------------- */
+.btn-small {
+  padding: 6px 10px;
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 15px;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
   user-select: none;
 }
 
-.btn-generate:hover {
-  background: #060606;
+.btn-small.edit {
+  background-color: #f6f8fa;
+  color: #24292f;
+  border: 1px solid #d0d7de;
 }
 
-/* Logout button (Secondary) */
-.btn-logout {
-  background: rgb(227, 42, 42);
+.btn-small.edit:hover {
+  background-color: #e1e4e8;
+}
+
+.btn-small.save {
+  background-color: #2ea043;
+  color: white;
+}
+
+.btn-small.save:hover {
+  background-color: #238636;
+}
+
+.btn-small.delete {
+  background-color: #cf222e;
+  color: white;
+}
+
+.btn-small.delete:hover {
+  background-color: #a40e26;
+}
+
+.btn-add-device {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  margin-top: 10px;
+  border-radius: 6px;
+  background-color: #0969da;
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-add-device:hover {
+  background-color: #218bff;
+}
+
+/* ------------------------- */
+/* Modal Overlay */
+/* ------------------------- */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255,255,255,0.9); /* soft white overlay */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: #edebeb;
+  padding: 30px 35px;
+  border-radius: 8px;
+  width: 400px;
+  max-width: 90%;
+  color: #24292f;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.modal-content label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.modal-content input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
   border: 1px solid #d0d7de;
-  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.modal-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.btn-primary {
+  background-color: #0969da;
+  color: white;
+  border-radius: 6px;
+  padding: 8px 15px;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background-color: #218bff;
+}
+
+.btn-secondary {
+  background-color: #f6f8fa;
+  color: #24292f;
+  border-radius: 6px;
+  padding: 8px 15px;
+  border: 1px solid #d0d7de;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background-color: #e1e4e8;
+}
+
+/* ------------------------- */
+/* Delete Account Button */
+/* ------------------------- */
+.delete-account {
+  margin-top: 40px;
+  text-align: right;
+}
+
+.btn-danger {
+  background-color: #cf222e;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-danger:hover {
+  background-color: #a40e26;
+}
+
+.header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.btn-logout {
+  background-color: #e53e3e;
+  color: white;
+  border: none;
+  padding: 8px 12px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 15px;
-  font-weight: 600;
-  color: #24292f;
-  user-select: none;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
 }
 
 .btn-logout:hover {
-  background: rgb(189, 4, 4);
-}
-
-/* Center welcome message */
-.welcome-message {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  user-select: none;
-}
-
-.welcome-message h1 {
-  font-size: 28px;
-  color: #24292f;
-  text-align: center;
+  background-color: #c53030;
 }
