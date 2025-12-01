@@ -27,6 +27,9 @@ export default function RecoveryPage() {
   const [newRecoveryCode, setNewRecoveryCode] = useState("");
   const [copied, setCopied] = useState(false);
 
+  const [showRecoveryCode, setShowRecoveryCode] = useState(false);
+
+
   const copyRecoveryCode = () => {
     navigator.clipboard.writeText(newRecoveryCode);
     setCopied(true);
@@ -130,15 +133,25 @@ export default function RecoveryPage() {
       </div>
 
       {step !== "email" && (
-        <div className="recovery-field">
+        <div className="recovery-input-wrapper">
           <label>Recovery Code</label>
-          <input
-            type="text"
-            value={recoveryCode}
-            onChange={(e) => setRecoveryCode(e.target.value)}
-            disabled={step !== "code"}
-            placeholder="Enter your recovery code"
-          />
+           <div className="recovery-input-container">
+            <input
+              type={showRecoveryCode ? "text" : "password"}
+              value={recoveryCode}
+              onChange={(e) => setRecoveryCode(e.target.value)}
+              disabled={step !== "code"}
+              placeholder="Enter your recovery code"
+              className="recovery-input"
+            />
+
+            <span
+              className="recovery-toggle"
+              onClick={() => setShowRecoveryCode((prev) => !prev)}
+            >
+              {showRecoveryCode ? "🔓" : "🔒"}
+            </span>
+          </div>
         </div>
       )}
 

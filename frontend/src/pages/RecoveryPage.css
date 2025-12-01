@@ -76,3 +76,41 @@ h1 {
 .back-to-signin span:hover {
   text-decoration: underline;
 }
+
+.recovery-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 15px;
+}
+
+.recovery-input-wrapper label {
+ font-weight: 600;
+  margin-bottom: 5px;
+}
+
+/* Input container positions toggle icon inside input */
+.recovery-input-container {
+  position: relative;
+  width: 100%;
+}
+
+.recovery-input {
+  width: 90%;
+  padding: 10px 40px 10px 10px; /* extra right padding for toggle */
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 15px;
+}
+
+/* Toggle sits *inside* the input field */
+.recovery-toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  user-select: none;
+  font-size: 18px;
+}
+
+
