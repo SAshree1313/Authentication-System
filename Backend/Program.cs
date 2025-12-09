@@ -114,23 +114,31 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// 8. CORS
+// ---------------------------------------------
+// Dynamic CORS: supports multiple frontends
+// ---------------------------------------------
+var corsOrigins = Environment.GetEnvironmentVariable("CORS_ORIGINS")
+                   ?.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                   ?? new[] { "http://localhost:3000" };
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:3000")
+        policy.WithOrigins(corsOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
     });
 });
 
+
 // MVC + Validators + Swagger
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true; // Allow case-insensitive matching
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase; // Use camelCase in JSON output.
     });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -139,8 +147,8 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
 var app = builder.Build();
 
-// 9. Middleware
-if (app.Environment.IsDevelopment())
+// 9. Middleware  
+if (app.Environment.IsDevelopment())  //Used for testing endpoints must be removed in production for safety
 {
     app.UseSwagger();
     app.UseSwaggerUI();

@@ -1,3 +1,4 @@
+// src/pages/RecoveryPage.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -6,7 +7,7 @@ import {
   finishRecovery,
 } from "../services/PasskeyService";
 import "./RecoveryPage.css";
-import "./RegistrationPage.css"; // Reuse modal styling
+import "./RegistrationPage.css";
 
 export default function RecoveryPage() {
   const navigate = useNavigate();
@@ -16,19 +17,17 @@ export default function RecoveryPage() {
   const [deviceName, setDeviceName] = useState("");
 
   const [challengeId, setChallengeId] = useState(null);
-  const [fidoOptions, setFidoOptions] = useState(null);
+  const [optionsFromServer, setOptionsFromServer] = useState(null);
   const [step, setStep] = useState("email");
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
-  // MODALS
+  // New recovery modal
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [newRecoveryCode, setNewRecoveryCode] = useState("");
   const [copied, setCopied] = useState(false);
-
-  const [showRecoveryCode, setShowRecoveryCode] = useState(false);
-
+  const [showRecoveryCodeField, setShowRecoveryCodeField] = useState(false);
 
   const copyRecoveryCode = () => {
     navigator.clipboard.writeText(newRecoveryCode);
@@ -36,6 +35,9 @@ export default function RecoveryPage() {
     setTimeout(() => setCopied(false), 1200);
   };
 
+  // ---------------------------------------------------
+  // Step 1: Begin recovery
+  // ---------------------------------------------------
   const handleEmailNext = async () => {
     if (!email.trim()) {
       setMessage("Please enter your email.");
@@ -52,18 +54,20 @@ export default function RecoveryPage() {
         setChallengeId(res.challengeId);
         setStep("code");
       } else {
-        setMessage(res.message || "Failed to start recovery.");
+        setMessage(res.message || "Unable to start recovery.");
       }
     } catch (err) {
-      console.error(err);
       setMessage(err?.response?.data?.message || "Error starting recovery.");
     } finally {
       setLoading(false);
     }
   };
 
+  // ---------------------------------------------------
+  // Step 2: Verify recovery code
+  // ---------------------------------------------------
   const handleRecoveryCodeNext = async () => {
-    if (!recoveryCode.trim() || !challengeId) return;
+    if (!recoveryCode.trim()) return;
 
     setLoading(true);
     setMessage("");
@@ -71,40 +75,49 @@ export default function RecoveryPage() {
     try {
       const res = await verifyRecoveryCode(challengeId, recoveryCode.trim());
 
+      // Backend returns: { challengeId, options }
       setChallengeId(res.challengeId);
-      setFidoOptions(res.options);
+      setOptionsFromServer(res.options);
       setStep("device");
     } catch (err) {
-      console.error(err);
       setMessage(err?.response?.data?.message || "Invalid recovery code.");
     } finally {
       setLoading(false);
     }
   };
 
+  // ---------------------------------------------------
+  // Step 3: Generate new passkey via WebAuthn (SDK handles WebAuthn)
+  // ---------------------------------------------------
   const handleGeneratePasskey = async () => {
-    if (!deviceName.trim() || !challengeId || !fidoOptions) return;
+    if (!deviceName.trim()) {
+      setMessage("Please provide a device name.");
+      return;
+    }
 
     setLoading(true);
     setMessage("");
 
     try {
-      const res = await finishRecovery(
+      // SDK performs WebAuthn internally
+      const result = await finishRecovery(
         challengeId,
-        fidoOptions,
+        optionsFromServer,
         deviceName.trim()
       );
 
-      if (res.success) {
-        // NEW: show recovery modal
-        setNewRecoveryCode(res.newRecoveryCode);
-        setShowRecoveryModal(true);
-      } else {
-        setMessage(res.message || "Failed to complete recovery.");
+      if (!result.success) {
+        setMessage(result.message || "Failed to complete recovery.");
+        return;
       }
+
+      // Show new recovery code
+      setNewRecoveryCode(result.newRecoveryCode);
+      setShowRecoveryModal(true);
+
     } catch (err) {
       console.error(err);
-      setMessage("Error generating passkey.");
+      setMessage("Error completing recovery.");
     } finally {
       setLoading(false);
     }
@@ -121,40 +134,40 @@ export default function RecoveryPage() {
 
       {message && <p className="error-message">{message}</p>}
 
+      {/* Step 1: Enter Email */}
       <div className="recovery-field">
         <label>Email</label>
         <input
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
           disabled={step !== "email"}
-          placeholder="Enter your email"
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@example.com"
         />
       </div>
 
+      {/* Step 2: Enter Recovery Code */}
       {step !== "email" && (
         <div className="recovery-input-wrapper">
           <label>Recovery Code</label>
-           <div className="recovery-input-container">
+          <div className="recovery-input-container">
             <input
-              type={showRecoveryCode ? "text" : "password"}
+              type={showRecoveryCodeField ? "text" : "password"}
               value={recoveryCode}
-              onChange={(e) => setRecoveryCode(e.target.value)}
               disabled={step !== "code"}
-              placeholder="Enter your recovery code"
-              className="recovery-input"
+              onChange={(e) => setRecoveryCode(e.target.value)}
             />
-
             <span
               className="recovery-toggle"
-              onClick={() => setShowRecoveryCode((prev) => !prev)}
+              onClick={() => setShowRecoveryCodeField((v) => !v)}
             >
-              {showRecoveryCode ? "🔓" : "🔒"}
+              {showRecoveryCodeField ? "🔓" : "🔒"}
             </span>
           </div>
         </div>
       )}
 
+      {/* Step 3: New Device */}
       {step === "device" && (
         <div className="recovery-field">
           <label>Device Name</label>
@@ -162,38 +175,26 @@ export default function RecoveryPage() {
             type="text"
             value={deviceName}
             onChange={(e) => setDeviceName(e.target.value)}
-            placeholder="Enter a name for this device"
+            placeholder="e.g., My iPhone"
           />
         </div>
       )}
 
       <div className="recovery-actions">
         {step === "email" && (
-          <button
-            onClick={handleEmailNext}
-            disabled={loading}
-            className="btn-primary"
-          >
+          <button disabled={loading} className="btn-primary" onClick={handleEmailNext}>
             {loading ? "Loading..." : "Next"}
           </button>
         )}
 
         {step === "code" && (
-          <button
-            onClick={handleRecoveryCodeNext}
-            disabled={loading}
-            className="btn-primary"
-          >
+          <button disabled={loading} className="btn-primary" onClick={handleRecoveryCodeNext}>
             {loading ? "Verifying..." : "Next"}
           </button>
         )}
 
         {step === "device" && (
-          <button
-            onClick={handleGeneratePasskey}
-            disabled={loading}
-            className="btn-primary"
-          >
+          <button disabled={loading} className="btn-primary" onClick={handleGeneratePasskey}>
             {loading ? "Generating..." : "Generate Passkey"}
           </button>
         )}
@@ -203,29 +204,20 @@ export default function RecoveryPage() {
         <span onClick={() => navigate("/login")}>Back to Sign In</span>
       </div>
 
-      {/* NEW: RECOVERY CODE MODAL */}
+      {/* Recovery Code Modal */}
       {showRecoveryModal && (
         <div className="recovery-modal-overlay">
           <div className="recovery-modal-container">
             <h2>Your new recovery code</h2>
 
-            <p className="description">
-              Store this code safely. You can’t view it again.
-            </p>
+            <p className="description">Store this safely.</p>
 
             <div className="gh-copy-container">
               <span className="gh-code">{newRecoveryCode}</span>
-
-              <button
-                className="gh-copy-btn"
-                onClick={copyRecoveryCode}
-                title="Copy"
-              >
+              <button className="gh-copy-btn" onClick={copyRecoveryCode}>
                 {copied ? "✔" : "📄"}
               </button>
             </div>
-
-            {copied && <p className="gh-copied-text">Copied!</p>}
 
             <button className="modal-button" onClick={closeRecoveryModal}>
               I have stored this code

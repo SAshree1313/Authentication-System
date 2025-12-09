@@ -1,8 +1,9 @@
+// src/pages/RegistrationPage.jsx
 import "./RegistrationPage.css";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useContext } from "react";
 import { AuthContext } from "../auth/AuthContext";
-import { startRegister, finishRegister } from "../services/PasskeyService";
+import { startRegister } from "../services/PasskeyService";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -14,22 +15,20 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
-  const [pendingRegistration, setPendingRegistration] = useState(null);
-
-  // Modal A
+  // Device modal
   const [showDeviceModal, setShowDeviceModal] = useState(false);
   const [deviceName, setDeviceName] = useState("");
 
-  // Modal B
+  // Recovery modal
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState("");
 
-  // Copy state for GitHub-like copy UI
   const [copied, setCopied] = useState(false);
 
   const validateEmail = (email) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
+  // Step 1 — Ask for name & email
   const handleRegister = () => {
     if (!name || !email) {
       setMessage("Name and email are required.");
@@ -44,59 +43,41 @@ export default function RegisterPage() {
     setShowDeviceModal(true);
   };
 
-  const beginPasskeyRegistration = async () => {
+  // Step 2 — Begin SDK registration after device name
+  const beginRegistration = async () => {
     setShowDeviceModal(false);
-
     setLoading(true);
     setMessage("");
 
     try {
-      const begin = await startRegister({ name, email });
+      // SDK handles:
+      // - registration begin
+      // - WebAuthn create()
+      // - registration complete
+      const res = await startRegister({
+        name,
+        email,
+        deviceName: deviceName.trim() || null,
+      });
 
-      if (!begin?.options || !begin?.challengeId) {
-        setMessage("Invalid server response.");
-        setLoading(false);
-        setDeviceName("");
+      if (!res.success) {
+        setMessage(res.message || "Passkey registration failed.");
         return;
       }
 
-      setPendingRegistration(begin);
-      await runWebauthnFlow(begin);
-
-    } catch (err) {
-      console.error(err);
-      setMessage(err.response?.data?.message || "Registration error");
-      setDeviceName("");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const runWebauthnFlow = async (begin) => {
-    try {
-      const { challengeId, options } = begin;
-
-      const result = await finishRegister(
-        challengeId,
-        options,
-        deviceName.trim() || null
-      );
-
-      if (!result?.success) {
-        setMessage(result?.message || "Passkey registration failed.");
-        setDeviceName("");
-        return;
-      }
-
-      setRecoveryCode(result.recoveryCode || "");
+      // Show recovery code modal
+      setRecoveryCode(res.recoveryCode || "");
       setShowRecoveryModal(true);
 
-      await passkeyLogin(result.token);
-
+      // Auto-login using token
+      if (res.token) {
+        await passkeyLogin(res.token);
+      }
     } catch (err) {
-      console.error(err);
-      setMessage("Error finishing registration");
-      setDeviceName("");
+      console.error("Registration error:", err);
+      setMessage("Error during registration.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -105,7 +86,6 @@ export default function RegisterPage() {
     navigate("/welcome");
   };
 
-  // Copy handler
   const copyRecoveryCode = () => {
     navigator.clipboard.writeText(recoveryCode);
     setCopied(true);
@@ -159,7 +139,6 @@ export default function RegisterPage() {
         <div className="recovery-modal-overlay">
           <div className="recovery-modal-container">
             <h2>Name this device</h2>
-
             <p className="description">
               Give a name for this device so you can recognize it later.
             </p>
@@ -171,7 +150,7 @@ export default function RegisterPage() {
               onChange={(e) => setDeviceName(e.target.value)}
             />
 
-            <button className="modal-button" onClick={beginPasskeyRegistration}>
+            <button className="modal-button" onClick={beginRegistration}>
               Continue
             </button>
           </div>
@@ -184,26 +163,17 @@ export default function RegisterPage() {
           <div className="recovery-modal-container">
             <h2>Your recovery code</h2>
 
-            <p className="description">
-              Store this code safely. You can’t view it again.
-            </p>
+            <p className="description">Store this code safely. You can’t view it again.</p>
 
-            {/* GitHub-style Copy UI */}
             <div className="gh-copy-container">
               <span className="gh-code">{recoveryCode}</span>
 
-              <button
-                className="gh-copy-btn"
-                onClick={copyRecoveryCode}
-                title="Copy"
-              >
+              <button className="gh-copy-btn" onClick={copyRecoveryCode} title="Copy">
                 {copied ? "✔" : "📄"}
               </button>
             </div>
 
-            {copied && (
-              <p className="gh-copied-text">Copied!</p>
-            )}
+            {copied && <p className="gh-copied-text">Copied!</p>}
 
             <button className="modal-button" onClick={finishRecoveryModal}>
               I have stored this code
