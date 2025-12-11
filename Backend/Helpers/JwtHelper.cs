@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
 namespace Backend.Helpers
@@ -6,13 +7,25 @@ namespace Backend.Helpers
     {
         public static int? GetUserId(ClaimsPrincipal user)
         {
-            var claim = user.Claims
-                .FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
-
-            if (claim == null)
+            if (user == null) 
                 return null;
 
-            return int.Parse(claim.Value);
+            // The three possible places userId may be stored
+            string[] keys = new[]
+            {
+                "id",                               // custom claim (your primary)
+                JwtRegisteredClaimNames.Sub,        // standard subject claim
+                ClaimTypes.NameIdentifier           // fallback used by some identity providers
+            };
+
+            foreach (var key in keys)
+            {
+                var value = user.Claims.FirstOrDefault(c => c.Type == key)?.Value;
+                if (int.TryParse(value, out int id))
+                    return id;
+            }
+
+            return null; // nothing usable found
         }
     }
 }

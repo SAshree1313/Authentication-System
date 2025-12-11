@@ -36,7 +36,7 @@ namespace Backend.Services.Passkey
         // -------------------------
         Task<PasskeyDeviceListResponseDto> GetDevicesAsync(int userId);
         Task<PasskeyDeviceDto> UpdateDeviceNameAsync(int userId, string credentialId, string deviceName);
-        Task DeleteDeviceAsync(int userId, string credentialId);
+        Task<DeleteDeviceResponseDto> DeleteDeviceAsync(int userId, string credentialId);
 
         // -------------------------
         // Add Device

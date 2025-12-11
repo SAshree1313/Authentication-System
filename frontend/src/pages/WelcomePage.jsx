@@ -1,4 +1,3 @@
-// src/pages/WelcomePage.jsx
 import React, { useContext, useEffect, useState } from "react";
 import { AuthContext } from "../auth/AuthContext";
 import {
@@ -9,13 +8,12 @@ import {
   finishRegister,
   deleteAccount,
 } from "../services/MultiDeviceService";
-import {
-  FaDesktop, FaSave, FaEdit, FaTrash, FaPlus, FaSignOutAlt
-} from "react-icons/fa";
+
+import { FaDesktop, FaSave, FaEdit, FaTrash, FaPlus, FaSignOutAlt } from "react-icons/fa";
 import "./WelcomePage.css";
 
 export default function WelcomePage() {
-  const { user, token, logout } = useContext(AuthContext);
+  const { user, token, setToken, logout } = useContext(AuthContext);
 
   const [devices, setDevices] = useState([]);
   const [editingId, setEditingId] = useState(null);
@@ -26,9 +24,8 @@ export default function WelcomePage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [addDeviceName, setAddDeviceName] = useState("");
 
-  // ---------------------------------------------------
-  // Load devices on mount
-  // ---------------------------------------------------
+
+  // Load devices when token is ready
   useEffect(() => {
     if (!token) return;
     fetchDevices();
@@ -38,19 +35,70 @@ export default function WelcomePage() {
     try {
       const res = await getDevices(token);
       setDevices(res.devices || []);
-    } catch (err) {
-      console.error(err);
+    } catch {
       setMessage("Failed to fetch devices");
     }
   };
 
-  // ---------------------------------------------------
-  // Rename device
-  // ---------------------------------------------------
+
+  // DELETE DEVICE (now handles token refresh)
+  const handleDeleteDevice = async (credentialId) => {
+    if (!window.confirm("Are you sure you want to delete this device?")) return;
+
+    try {
+      const res = await deleteDevice({ id: credentialId, token });
+
+      // ⭐ Backend may return a new token
+      if (res?.token) {
+        localStorage.setItem("token", res.token);
+        setToken(res.token);
+      }
+
+      setDevices((prev) => prev.filter((d) => d.credentialId !== credentialId));
+    } catch {
+      setMessage("Error deleting device");
+    }
+  };
+
+
+  // ADD NEW DEVICE (now handles token refresh)
+  const handleGenerateNewDevice = async () => {
+    if (!addDeviceName.trim()) return;
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const begin = await startRegisterExistingDevice(token);
+
+      const att = await finishRegister({
+        challengeId: begin.challengeId,
+        attestation: begin.options,
+        deviceName: addDeviceName.trim(),
+        token,
+      });
+
+      // ⭐ Save new token if provided
+      if (att?.token) {
+        localStorage.setItem("token", att.token);
+        setToken(att.token);
+      }
+
+      await fetchDevices();
+      setShowAddModal(false);
+      setAddDeviceName("");
+    } catch {
+      setMessage("Error adding device");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
   const handleSaveDeviceName = async (credentialId) => {
     if (!newDeviceName.trim()) return;
     try {
-      const updated = await updateDeviceName({
+      await updateDeviceName({
         id: credentialId,
         name: newDeviceName.trim(),
         token,
@@ -66,93 +114,26 @@ export default function WelcomePage() {
 
       setEditingId(null);
       setNewDeviceName("");
-    } catch (err) {
-      console.error(err);
+    } catch {
       setMessage("Error updating device name");
     }
   };
 
-  // ---------------------------------------------------
-  // Delete device
-  // ---------------------------------------------------
-  const handleDeleteDevice = async (credentialId) => {
-    if (!window.confirm("Are you sure you want to delete this device?")) return;
 
-    try {
-      await deleteDevice({ id: credentialId, token });
-      setDevices((prev) =>
-        prev.filter((d) => d.credentialId !== credentialId)
-      );
-    } catch (err) {
-      console.error(err);
-      setMessage("Error deleting device");
-    }
-  };
-
-  // ---------------------------------------------------
-  // Add new device
-  // ---------------------------------------------------
-  const handleAddDevice = () => {
-    setAddDeviceName("");
-    setShowAddModal(true);
-  };
-
-  const handleGenerateNewDevice = async () => {
-    if (!addDeviceName.trim()) return;
-
-    setLoading(true);
-    setMessage("");
-
-    try {
-      // Step 1: begin
-      const begin = await startRegisterExistingDevice(token);
-
-      if (!begin?.options || !begin?.challengeId) {
-        setMessage("Invalid response from server.");
-        return;
-      }
-
-      // Step 2: SDK handles WebAuthn and finish:
-      const attestation = await finishRegister({
-        challengeId: begin.challengeId,
-        attestation: begin.options, // SDK handles WebAuthn internally
-        deviceName: addDeviceName.trim(),
-        token,
-      });
-
-      if (!attestation?.success) {
-        setMessage(attestation?.message || "Device registration failed.");
-        return;
-      }
-
-      // Refresh UI
-      await fetchDevices();
-
-      setShowAddModal(false);
-      setAddDeviceName("");
-    } catch (err) {
-      console.error(err);
-      setMessage("Error adding device");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ---------------------------------------------------
-  // Delete account
-  // ---------------------------------------------------
   const handleDeleteAccount = async () => {
     if (!window.confirm("This will permanently delete your account. Continue?")) return;
-
     try {
       await deleteAccount(token);
       logout();
-    } catch (err) {
-      console.error(err);
+    } catch {
       setMessage("Error deleting account");
     }
   };
 
+
+  // -----------------------------------------------------------------
+  // UI
+  // -----------------------------------------------------------------
   return (
     <div className="welcome-container modern">
       <div className="header-flex">
@@ -222,13 +203,14 @@ export default function WelcomePage() {
 
           <tr>
             <td colSpan={3}>
-              <button className="btn-add-device" onClick={handleAddDevice}>
+              <button className="btn-add-device" onClick={() => setShowAddModal(true)}>
                 <FaPlus /> Add Device
               </button>
             </td>
           </tr>
         </tbody>
       </table>
+
 
       {/* ADD DEVICE MODAL */}
       {showAddModal && (
@@ -237,7 +219,8 @@ export default function WelcomePage() {
             <h3>Add New Device</h3>
 
             <label>Device Name</label>
-            <input type="text"
+            <input
+              type="text"
               value={addDeviceName}
               onChange={(e) => setAddDeviceName(e.target.value)}
               placeholder="Enter device name"

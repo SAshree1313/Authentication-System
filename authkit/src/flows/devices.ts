@@ -1,22 +1,27 @@
 import { http } from "../http/client";
 import { performRegistration } from "../webauthn/perform";
 
-export async function listDevices(token: string) {
-  return await http.get("/passkey/device/list", token);
+// List devices
+export function listDevices(token: string) {
+  return http.get("/passkey/device/list", token);
 }
 
-export async function renameDevice(credentialId: string, deviceName: string, token: string) {
-  return await http.put(`/passkey/device/${encodeURIComponent(credentialId)}`, { deviceName }, token);
+// Rename device
+export function renameDevice(credentialId: string, deviceName: string, token: string) {
+  return http.put(`/passkey/device/${encodeURIComponent(credentialId)}`, { deviceName }, token);
 }
 
-export async function deleteDevice(credentialId: string, token: string) {
-  return await http.del(`/passkey/device/${encodeURIComponent(credentialId)}`, token);
+// Delete device — ⚠ backend may return a NEW TOKEN
+export function deleteDevice(credentialId: string, token: string) {
+  return http.del(`/passkey/device/${encodeURIComponent(credentialId)}`, token);
 }
 
-export async function addDeviceBegin(token: string) {
-  return await http.post("/passkey/device/add/begin", {}, token);
+// Begin add device
+export function addDeviceBegin(token: string) {
+  return http.post("/passkey/device/add/begin", {}, token);
 }
 
+// Complete add device — ⚠ backend returns NEW TOKEN
 export async function addDeviceComplete(
   challengeId: string,
   optionsFromServer: any,
@@ -25,7 +30,7 @@ export async function addDeviceComplete(
 ) {
   const att = await performRegistration(optionsFromServer);
 
-  return await http.post(
+  return http.post(
     "/passkey/device/add/complete",
     {
       challengeId,
@@ -36,7 +41,7 @@ export async function addDeviceComplete(
         attestationObject: att.response.attestationObject,
       },
       type: att.type,
-      deviceName,
+      deviceName
     },
     token
   );

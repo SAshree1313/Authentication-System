@@ -42,9 +42,7 @@ namespace Backend.Services.Passkey
             _loginValidator = loginValidator;
         }
 
-        // -------------------------------------------------------
-        // Internal Session Objects
-        // -------------------------------------------------------
+        // Small internal session carriers stored in IMemoryCache during WebAuthn flows
         private class RegistrationSession
         {
             public CredentialCreateOptions Options { get; set; } = null!;
@@ -60,7 +58,6 @@ namespace Backend.Services.Passkey
 
         private class RecoverySession
         {
-            
             public int Step { get; set; }      // 1 = verify code, 2 = register passkey
             public int UserId { get; set; }
             public string Email { get; set; } = string.Empty;
@@ -68,7 +65,7 @@ namespace Backend.Services.Passkey
         }
 
         // -------------------------------------------------------
-        // PASSKEY REGISTRATION
+        // PASSKEY REGISTRATION (BEGIN)
         // -------------------------------------------------------
         public async Task<PasskeyRegisterBeginResponseDto> RegisterBeginAsync(PasskeyRegisterBeginRequestDto request)
         {
@@ -89,6 +86,8 @@ namespace Backend.Services.Passkey
             var options = _fido2.RequestNewCredential(fidoUser, new List<PublicKeyCredentialDescriptor>());
 
             var challengeId = Guid.NewGuid().ToString();
+
+            // Cache the session for the short time the browser will perform WebAuthn
             _cache.Set(challengeId, new RegistrationSession
             {
                 Options = options,
@@ -103,14 +102,19 @@ namespace Backend.Services.Passkey
             };
         }
 
+        // -------------------------------------------------------
+        // PASSKEY REGISTRATION (COMPLETE) - ATOMIC
+        // - Create User + Credential in a DB transaction so no partial user exists
+        // -------------------------------------------------------
         public async Task<PasskeyRegisterCompleteResponseDto> RegisterCompleteAsync(PasskeyRegisterCompleteRequestDto request)
         {
             if (!_cache.TryGetValue<RegistrationSession>(request.ChallengeId, out var session))
                 throw new NotFoundException("Passkey challenge expired.");
 
-            // Optional: remove challenge to prevent replay. You already did this; safe to do before attestation.
+            // Prevent replay by removing the challenge immediately
             _cache.Remove(request.ChallengeId);
 
+            // Build attestation object required by FIDO2 library
             var attestationResponse = new AuthenticatorAttestationRawResponse
             {
                 Id = Base64UrlHelper.Decode(request.RawId),
@@ -123,6 +127,7 @@ namespace Backend.Services.Passkey
                 }
             };
 
+            // Validate attestation and ensure credential id is unused
             var makeResult = await _fido2.MakeNewCredentialAsync(
                 attestationResponse,
                 session.Options!,
@@ -133,20 +138,19 @@ namespace Backend.Services.Passkey
                 });
 
             if (makeResult?.Result == null)
-                throw new Exception("Attestation failed."); // consider a more specific exception
+                throw new Exception("Attestation failed.");
 
-            // Double-check that email hasn't been registered between begin and complete
+            // Final check: ensure email wasn't registered while browser performed WebAuthn
             if (await _context.Users.AnyAsync(u => u.Email == session.Email))
                 throw new DuplicateEmailException("Email already exists.");
 
-            // Use transaction to ensure user + credential are saved atomically
+            // Use a DB transaction to guarantee atomic user + credential creation
             await using var txn = await _context.Database.BeginTransactionAsync();
-
             try
             {
-                // Create user
                 var recoveryCode = RecoveryCodeHelper.GenerateRecoveryCode();
 
+                // Create user entity
                 var user = new User
                 {
                     Name = session.Name,
@@ -154,13 +158,15 @@ namespace Backend.Services.Passkey
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     RecoveryCodeHash = RecoveryCodeHelper.HashRecoveryCode(recoveryCode),
-                    RecoveryCodeCreatedAt = DateTime.UtcNow
+                    RecoveryCodeCreatedAt = DateTime.UtcNow,
+                    TokenVersion = 1
                 };
 
                 _context.Users.Add(user);
+                // Save to get user.Id assigned (tracked by EF)
                 await _context.SaveChangesAsync();
 
-                // Save credential with optional device name
+                // Create credential entity referencing the newly created user
                 var credential = new WebAuthnCredential
                 {
                     UserId = user.Id,
@@ -174,9 +180,10 @@ namespace Backend.Services.Passkey
                 _context.WebAuthnCredentials.Add(credential);
                 await _context.SaveChangesAsync();
 
-                // Commit transaction
+                // Commit the transaction only after both user and credential are persisted
                 await txn.CommitAsync();
 
+                // Generate JWT for the new user (safe: user.TokenVersion already set)
                 var token = _tokenService.GenerateToken(user);
 
                 return new PasskeyRegisterCompleteResponseDto
@@ -191,13 +198,14 @@ namespace Backend.Services.Passkey
             }
             catch
             {
-                await txn.RollbackAsync();
-                throw; // bubble up so middleware will convert into proper HTTP response
+                // Rollback on any error to prevent partial writes
+                try { await txn.RollbackAsync(); } catch { /* swallow rollback errors */ }
+                throw;
             }
         }
 
         // -------------------------------------------------------
-        // PASSKEY LOGIN
+        // PASSKEY LOGIN (BEGIN)
         // -------------------------------------------------------
         public async Task<PasskeyLoginBeginResponseDto> LoginBeginAsync(PasskeyLoginBeginRequestDto request)
         {
@@ -205,9 +213,6 @@ namespace Backend.Services.Passkey
             if (!validation.IsValid)
                 throw new ValidationException(validation.Errors);
 
-            // ============================
-            // COOLDOWN CHECK (NEW)
-            // ============================
             if (LoginRateLimiterHelper.IsCooldownActive(_cache, request.Email, out var secs))
                 throw new ApiException($"COOLDOWN:{secs}");
 
@@ -217,7 +222,6 @@ namespace Backend.Services.Passkey
 
             if (user == null)
             {
-                // Count fails for unknown email as well
                 LoginRateLimiterHelper.IncrementFailCount(_cache, request.Email);
                 throw new UserNotFoundException("User not found.");
             }
@@ -248,11 +252,15 @@ namespace Backend.Services.Passkey
             };
         }
 
+        // -------------------------------------------------------
+        // PASSKEY LOGIN (COMPLETE)
+        // -------------------------------------------------------
         public async Task<PasskeyLoginCompleteResponseDto> LoginCompleteAsync(PasskeyLoginCompleteRequestDto request)
         {
             if (!_cache.TryGetValue<LoginSession>(request.ChallengeId, out var session))
                 throw new NotFoundException("Login session expired.");
 
+            // Prevent replay
             _cache.Remove(request.ChallengeId);
 
             var credentialIdString = Base64UrlHelper.Encode(Base64UrlHelper.Decode(request.RawId));
@@ -263,7 +271,6 @@ namespace Backend.Services.Passkey
 
             if (credential == null || credential.UserId != session.UserId)
             {
-                // Count failed attempts
                 var email = await _context.Users.Where(u => u.Id == session.UserId).Select(u => u.Email).FirstOrDefaultAsync();
                 if (email != null)
                     LoginRateLimiterHelper.IncrementFailCount(_cache, email);
@@ -271,9 +278,10 @@ namespace Backend.Services.Passkey
                 throw new InvalidCredentialsException("Invalid credentials.");
             }
 
-            // Verify FIDO2 assertion...
-            var assertion = new AuthenticatorAssertionRawResponse 
-            { Id = Base64UrlHelper.Decode(request.RawId),
+            // Build assertion for FIDO2 library
+            var assertion = new AuthenticatorAssertionRawResponse
+            {
+                Id = Base64UrlHelper.Decode(request.RawId),
                 RawId = Base64UrlHelper.Decode(request.RawId),
                 Type = PublicKeyCredentialType.PublicKey,
                 Response = new AuthenticatorAssertionRawResponse.AssertionResponse
@@ -284,7 +292,8 @@ namespace Backend.Services.Passkey
                     UserHandle = string.IsNullOrWhiteSpace(request.Response.UserHandle)
                         ? null
                         : Base64UrlHelper.Decode(request.Response.UserHandle)
-                } };
+                }
+            };
 
             var result = await _fido2.MakeAssertionAsync(
                 assertion,
@@ -299,9 +308,10 @@ namespace Backend.Services.Passkey
                 throw new InvalidCredentialsException("Assertion failed.");
             }
 
-            // SUCCESS → RESET FAIL COUNT
+            // Reset rate limiter on success
             LoginRateLimiterHelper.ResetFailCount(_cache, credential.User!.Email);
 
+            // Update sign count and last used timestamp and persist
             credential.SignCount = (int)result.Counter;
             credential.LastUsedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
@@ -316,7 +326,6 @@ namespace Backend.Services.Passkey
                 Message = "Passkey login successful."
             };
         }
-
 
         // -------------------------------------------------------
         // PASSKEY RECOVERY
@@ -361,7 +370,7 @@ namespace Backend.Services.Passkey
             // Prepare FIDO2 options
             var fidoUser = new Fido2User
             {
-                Id = Guid.NewGuid().ToByteArray(),
+                Id = Encoding.UTF8.GetBytes(user.Id.ToString()),
                 Name = user.Email,
                 DisplayName = user.Name
             };
@@ -386,78 +395,128 @@ namespace Backend.Services.Passkey
         }
 
         public async Task<PasskeyRecoveryCompleteResponseDto> RecoveryCompleteAsync(PasskeyRecoveryCompleteRequestDto request)
+{
+    if (!_cache.TryGetValue<RecoverySession>(request.ChallengeId, out var session) || session.Step != 2)
+        throw new NotFoundException("Recovery session expired.");
+
+    _cache.Remove(request.ChallengeId);
+
+    Console.WriteLine($"[Recovery] Starting recovery for UserId: {session.UserId}");
+
+    // Load user
+    var user = await _context.Users
+        .Include(u => u.WebAuthnCredentials)
+        .FirstOrDefaultAsync(u => u.Id == session.UserId);
+
+    if (user == null)
+        throw new UserNotFoundException("User not found.");
+
+    Console.WriteLine($"[Recovery] User found: {user.Email}, Current credentials count: {user.WebAuthnCredentials.Count}");
+
+    // Build attestation
+    var attestation = new AuthenticatorAttestationRawResponse
+    {
+        Id = Base64UrlHelper.Decode(request.RawId),
+        RawId = Base64UrlHelper.Decode(request.RawId),
+        Type = PublicKeyCredentialType.PublicKey,
+        Response = new AuthenticatorAttestationRawResponse.ResponseData
         {
-            if (!_cache.TryGetValue<RecoverySession>(request.ChallengeId, out var session) || session.Step != 2)
-                throw new NotFoundException("Recovery session expired.");
+            AttestationObject = Base64UrlHelper.Decode(request.Response.AttestationObject),
+            ClientDataJson = Base64UrlHelper.Decode(request.Response.ClientDataJSON)
+        }
+    };
 
-            _cache.Remove(request.ChallengeId);
+    // Validate attestation
+    var makeResult = await _fido2.MakeNewCredentialAsync(
+        attestation,
+        session.Options!,
+        async (args, ct) =>
+        {
+            var id = Base64UrlHelper.Encode(args.CredentialId);
+            return !await _context.WebAuthnCredentials.AnyAsync(c => c.CredentialId == id);
+        });
 
-            var user = await _context.Users
-                .Include(u => u.WebAuthnCredentials)
-                .FirstOrDefaultAsync(u => u.Id == session.UserId);
+    if (makeResult?.Result == null)
+    {
+        Console.WriteLine("FIDO2 Recovery Error: " + makeResult.Status + " | " + makeResult.ErrorMessage);
+        throw new Exception("Passkey creation failed: " + makeResult.ErrorMessage);
+    }
 
-            if (user == null)
-                throw new UserNotFoundException("User not found.");
+    Console.WriteLine("[Recovery] FIDO2 validation successful");
 
-            var attestation = new AuthenticatorAttestationRawResponse
-            {
-                Id = Base64UrlHelper.Decode(request.RawId),
-                RawId = Base64UrlHelper.Decode(request.RawId),
-                Type = PublicKeyCredentialType.PublicKey,
-                Response = new AuthenticatorAttestationRawResponse.ResponseData
-                {
-                    AttestationObject = Base64UrlHelper.Decode(request.Response.AttestationObject),
-                    ClientDataJson = Base64UrlHelper.Decode(request.Response.ClientDataJSON)
-                }
-            };
+    await using var txn = await _context.Database.BeginTransactionAsync();
 
-            var makeResult = await _fido2.MakeNewCredentialAsync(
-                attestation,
-                session.Options!,
-                async (args, ct) =>
-                {
-                    var id = Base64UrlHelper.Encode(args.CredentialId);
-                    return !await _context.WebAuthnCredentials.AnyAsync(c => c.CredentialId == id);
-                });
+    try
+    {
+        // Delete all old credentials FIRST
+        var oldCreds = user.WebAuthnCredentials.ToList();
+        
+        Console.WriteLine($"[Recovery] Removing {oldCreds.Count} old credentials");
 
-            if (makeResult?.Result == null)
-                throw new Exception("Passkey creation failed.");
-
-            // Remove old devices
-            _context.WebAuthnCredentials.RemoveRange(user.WebAuthnCredentials);
-
-            // Add new device
-            var credential = new WebAuthnCredential
-            {
-                UserId = user.Id,
-                CredentialId = Base64UrlHelper.Encode(makeResult.Result.CredentialId),
-                PublicKey = Base64UrlHelper.Encode(makeResult.Result.PublicKey),
-                SignCount = (int)makeResult.Result.Counter,
-                CreatedAt = DateTime.UtcNow,
-                DeviceName = string.IsNullOrWhiteSpace(request.DeviceName) ? null : request.DeviceName
-            };
-
-            _context.WebAuthnCredentials.Add(credential);
-
-            // Generate new recovery key
-            var newCode = RecoveryCodeHelper.GenerateRecoveryCode();
-            user.RecoveryCodeHash = RecoveryCodeHelper.HashRecoveryCode(newCode);
-            user.RecoveryCodeCreatedAt = DateTime.UtcNow;
-
+        if (oldCreds.Any())
+        {
+            _context.WebAuthnCredentials.RemoveRange(oldCreds);
             await _context.SaveChangesAsync();
-
-            return new PasskeyRecoveryCompleteResponseDto
-            {
-                Success = true,
-                Message = "Passkey successfully recovered.",
-                NewRecoveryCode = newCode
-            };
         }
 
-        //---------------------------------------------------------------------------------------------------
+        // Now insert the new credential
+        var newCred = new WebAuthnCredential
+        {
+            UserId = user.Id,
+            CredentialId = Base64UrlHelper.Encode(makeResult.Result.CredentialId),
+            PublicKey = Base64UrlHelper.Encode(makeResult.Result.PublicKey),
+            SignCount = (int)makeResult.Result.Counter,
+            CreatedAt = DateTime.UtcNow,
+            DeviceName = string.IsNullOrWhiteSpace(request.DeviceName) ? null : request.DeviceName
+        };
+
+        Console.WriteLine($"[Recovery] Adding new credential: {newCred.CredentialId}, DeviceName: {newCred.DeviceName ?? "null"}");
+
+        _context.WebAuthnCredentials.Add(newCred);
+        
+        // New recovery code + token version bump
+        var newCode = RecoveryCodeHelper.GenerateRecoveryCode();
+        user.RecoveryCodeHash = RecoveryCodeHelper.HashRecoveryCode(newCode);
+        user.RecoveryCodeCreatedAt = DateTime.UtcNow;
+        user.TokenVersion += 1;
+
+        await _context.SaveChangesAsync();
+        
+        Console.WriteLine($"[Recovery] New credential saved with ID: {newCred.Id}, User TokenVersion: {user.TokenVersion}");
+        
+        Console.WriteLine($"[Recovery] User updated, new TokenVersion: {user.TokenVersion}");
+
+        await txn.CommitAsync();
+
+        Console.WriteLine("[Recovery] Transaction committed successfully");
+
+        // Verify the credential was saved
+        var savedCred = await _context.WebAuthnCredentials
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.CredentialId == newCred.CredentialId);
+        
+        Console.WriteLine($"[Recovery] Verification - Credential exists in DB: {savedCred != null}, ID: {savedCred?.Id}, DeviceName: {savedCred?.DeviceName ?? "null"}");
+
+        return new PasskeyRecoveryCompleteResponseDto
+        {
+            Success = true,
+            Message = "Passkey successfully recovered.",
+            NewRecoveryCode = newCode
+        };
+    }
+    catch (Exception ex)
+    {
+        await txn.RollbackAsync();
+        Console.WriteLine($"[Recovery] Transaction rolled back due to error: {ex.Message}");
+        Console.WriteLine($"[Recovery] Stack trace: {ex.StackTrace}");
+        throw;
+    }
+}
+
+        // -------------------------------------------------------
         // MULTI-DEVICE MANAGEMENT
-        //---------------------------------------------------------------------------------------------------
-        // Get all devices for logged-in user
+        // -------------------------------------------------------
+        // Get devices (read-only)
         public async Task<PasskeyDeviceListResponseDto> GetDevicesAsync(int userId)
         {
             var devices = await _context.WebAuthnCredentials
@@ -477,7 +536,7 @@ namespace Backend.Services.Passkey
             };
         }
 
-        // Update device name
+        // Update device name (single field change - atomicity not strictly required but we still persist safely)
         public async Task<PasskeyDeviceDto> UpdateDeviceNameAsync(int userId, string credentialId, string deviceName)
         {
             var device = await _context.WebAuthnCredentials
@@ -497,17 +556,55 @@ namespace Backend.Services.Passkey
             };
         }
 
-        // Delete device
-        public async Task DeleteDeviceAsync(int userId, string credentialId)
+        // Delete device - ATOMIC (remove credential + bump token version)
+        public async Task<DeleteDeviceResponseDto> DeleteDeviceAsync(int userId, string credentialId)
         {
-            var device = await _context.WebAuthnCredentials
-                .FirstOrDefaultAsync(c => c.CredentialId == credentialId && c.UserId == userId);
+            await using var txn = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var device = await _context.WebAuthnCredentials
+                    .FirstOrDefaultAsync(c => c.CredentialId == credentialId && c.UserId == userId);
 
-            if (device == null) throw new NotFoundException("Device not found.");
+                if (device == null)
+                {
+                    await txn.RollbackAsync();
+                    throw new NotFoundException("Device not found.");
+                }
 
-            _context.WebAuthnCredentials.Remove(device);
-            await _context.SaveChangesAsync();
+                _context.WebAuthnCredentials.Remove(device);
+
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+                if (user == null)
+                {
+                    await txn.RollbackAsync();
+                    throw new UserNotFoundException("User not found.");
+                }
+
+                // TokenVersion bump invalidates old JWTs
+                user.TokenVersion += 1;
+
+                await _context.SaveChangesAsync();
+                await txn.CommitAsync();
+
+                // Generate updated JWT
+                var newToken = _tokenService.GenerateToken(user);
+
+                return new DeleteDeviceResponseDto
+                {
+                    Success = true,
+                    Token = newToken,
+                    Message = "Device deleted successfully."
+                };
+            }
+            catch
+            {
+                try { await txn.RollbackAsync(); } catch { }
+                throw;
+            }
         }
+
+
+
         // -------------------------
         // Add Device (Begin)
         // -------------------------
@@ -539,7 +636,7 @@ namespace Backend.Services.Passkey
         }
 
         // -------------------------
-        // Add Device (Complete)
+        // Add Device (Complete) - ATOMIC
         // -------------------------
         public async Task<PasskeyRegisterCompleteResponseDto> AddDeviceCompleteAsync(int userId, PasskeyRegisterCompleteRequestDto request)
         {
@@ -572,58 +669,91 @@ namespace Backend.Services.Passkey
             if (makeResult?.Result == null)
                 throw new Exception("Attestation failed.");
 
-            var user = await _context.Users.FindAsync(userId);
-            if (user == null) throw new UserNotFoundException("User not found.");
-
-            var credential = new WebAuthnCredential
+            // Start transaction to ensure credential addition + tokenVersion bump are atomic
+            await using var txn = await _context.Database.BeginTransactionAsync();
+            try
             {
-                UserId = user.Id,
-                CredentialId = Base64UrlHelper.Encode(makeResult.Result.CredentialId),
-                PublicKey = Base64UrlHelper.Encode(makeResult.Result.PublicKey),
-                SignCount = (int)makeResult.Result.Counter,
-                CreatedAt = DateTime.UtcNow,
-                DeviceName = string.IsNullOrWhiteSpace(request.DeviceName) ? null : request.DeviceName
-            };
+                // Re-load user with tracking inside transaction
+                var user = await _context.Users.FindAsync(userId);
+                if (user == null)
+                {
+                    await txn.RollbackAsync();
+                    throw new UserNotFoundException("User not found.");
+                }
 
-            _context.WebAuthnCredentials.Add(credential);
-            await _context.SaveChangesAsync();
+                // Create credential
+                var credential = new WebAuthnCredential
+                {
+                    UserId = user.Id,
+                    CredentialId = Base64UrlHelper.Encode(makeResult.Result.CredentialId),
+                    PublicKey = Base64UrlHelper.Encode(makeResult.Result.PublicKey),
+                    SignCount = (int)makeResult.Result.Counter,
+                    CreatedAt = DateTime.UtcNow,
+                    DeviceName = string.IsNullOrWhiteSpace(request.DeviceName) ? null : request.DeviceName
+                };
 
-            var token = _tokenService.GenerateToken(user);
+                _context.WebAuthnCredentials.Add(credential);
 
-            return new PasskeyRegisterCompleteResponseDto
+                // Invalidate old tokens
+                user.TokenVersion += 1;
+
+                await _context.SaveChangesAsync();
+                await txn.CommitAsync();
+
+                // Generate a fresh token for the user (reflects new TokenVersion)
+                var token = _tokenService.GenerateToken(user);
+
+                return new PasskeyRegisterCompleteResponseDto
+                {
+                    UserId = user.Id,
+                    CredentialId = credential.CredentialId,
+                    Token = token,
+                    Success = true,
+                    Message = "Device added successfully."
+                };
+            }
+            catch
             {
-                UserId = user.Id,
-                CredentialId = credential.CredentialId,
-                Token = token,
-                Success = true,
-                Message = "Device added successfully."
-            };
+                try { await txn.RollbackAsync(); } catch { /* swallow */ }
+                throw;
+            }
         }
 
-
         //--------------------------------------------------------------------------------------------------
-        // DELETE ACCOUNT
+        // DELETE ACCOUNT - ATOMIC
+        // Remove passkeys and user in a single transaction to avoid orphans
         //--------------------------------------------------------------------------------------------------
         public async Task DeleteAccountAsync(int userId)
         {
-            var user = await _context.Users
-                .Include(u => u.WebAuthnCredentials)
-                .FirstOrDefaultAsync(u => u.Id == userId);
+            await using var txn = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var user = await _context.Users
+                    .Include(u => u.WebAuthnCredentials)
+                    .FirstOrDefaultAsync(u => u.Id == userId);
 
-            if (user == null)
-                throw new UserNotFoundException("User not found.");
+                if (user == null)
+                {
+                    await txn.RollbackAsync();
+                    throw new UserNotFoundException("User not found.");
+                }
 
-            // Remove all passkeys
-            _context.WebAuthnCredentials.RemoveRange(user.WebAuthnCredentials);
+                // Remove credentials and user in same transaction
+                _context.WebAuthnCredentials.RemoveRange(user.WebAuthnCredentials);
+                _context.Users.Remove(user);
 
-            // Remove user
-            _context.Users.Remove(user);
-
-            await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync();
+                await txn.CommitAsync();
+            }
+            catch
+            {
+                try { await txn.RollbackAsync(); } catch { /* swallow */ }
+                throw;
+            }
         }
 
         // --------------------------------------------------------------------------------------------------
-        // PROFILE
+        // PROFILE (read-only)
         // -----------------------------------------------------------------------------------------------------
         public async Task<UserProfileResponseDto> GetProfileAsync(int userId)
         {
@@ -642,13 +772,5 @@ namespace Backend.Services.Passkey
                 HasPasskey = user.WebAuthnCredentials.Any()
             };
         }
-
     }
 }
-
-
-
-
-
-
-

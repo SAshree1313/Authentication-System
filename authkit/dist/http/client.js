@@ -7,12 +7,30 @@ class HttpClient {
     setBase(url) {
         this.baseUrl = url.replace(/\/+$/, "");
     }
-    // Remove token from SDK
+    // Called by frontend to hook 401 behavior
+    setUnauthorizedHandler(handler) {
+        this.unauthorizedHandler = handler;
+    }
     headers(extra = {}) {
         return {
             "Content-Type": "application/json",
             ...extra
         };
+    }
+    // Centralized JSON parse + 401 handler
+    async handleResponse(res) {
+        const text = await res.text();
+        let json = {};
+        try {
+            json = text ? JSON.parse(text) : {};
+        }
+        catch {
+            json = {}; // Protect against parse errors
+        }
+        if (res.status === 401 && this.unauthorizedHandler) {
+            this.unauthorizedHandler();
+        }
+        return json;
     }
     async post(path, body, token) {
         const res = await fetch(this.baseUrl + path, {
@@ -22,8 +40,7 @@ class HttpClient {
                 : this.headers(),
             body: JSON.stringify(body)
         });
-        const text = await res.text();
-        return text ? JSON.parse(text) : {};
+        return this.handleResponse(res);
     }
     async put(path, body, token) {
         const res = await fetch(this.baseUrl + path, {
@@ -33,8 +50,7 @@ class HttpClient {
                 : this.headers(),
             body: JSON.stringify(body)
         });
-        const text = await res.text();
-        return text ? JSON.parse(text) : {};
+        return this.handleResponse(res);
     }
     async get(path, token) {
         const res = await fetch(this.baseUrl + path, {
@@ -42,8 +58,7 @@ class HttpClient {
                 ? { ...this.headers(), Authorization: `Bearer ${token}` }
                 : this.headers()
         });
-        const text = await res.text();
-        return text ? JSON.parse(text) : {};
+        return this.handleResponse(res);
     }
     async del(path, token) {
         const res = await fetch(this.baseUrl + path, {
@@ -52,8 +67,7 @@ class HttpClient {
                 ? { ...this.headers(), Authorization: `Bearer ${token}` }
                 : this.headers()
         });
-        const text = await res.text();
-        return text ? JSON.parse(text) : {};
+        return this.handleResponse(res);
     }
 }
 export const http = new HttpClient();

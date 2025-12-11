@@ -36,10 +36,11 @@ public class PasskeyDeviceController : ControllerBase
     public async Task<IActionResult> DeleteDevice(string credentialId)
     {
         var userId = int.Parse(User.FindFirst("id")!.Value);
-        await _service.DeleteDeviceAsync(userId, credentialId);
-        return Ok(new { Success = true });
-    }
 
+        var result = await _service.DeleteDeviceAsync(userId, credentialId);
+
+        return Ok(result);
+    }
     [HttpPost("add/begin")]
     public async Task<IActionResult> AddDeviceBegin()
     {

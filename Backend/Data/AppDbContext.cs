@@ -56,6 +56,11 @@ namespace Backend.Data
                 entity.Property(u => u.RecoveryCodeUsedAt)
                       .HasColumnName("recovery_code_used_at");
 
+                entity.Property(u => u.TokenVersion)
+                      .HasColumnName("token_version")
+                      .HasDefaultValue(1)
+                      .IsRequired();
+
                 // Navigation property configured automatically
             });
 

@@ -17,6 +17,9 @@ namespace Backend.Models
         public DateTime? RecoveryCodeCreatedAt { get; set; }
         public DateTime? RecoveryCodeUsedAt { get; set; }
 
+        // Token versioning (NEW)
+        // Starts at 1 and increments after sensitive actions
+        public int TokenVersion { get; set; } = 1;
 
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
