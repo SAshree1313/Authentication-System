@@ -367,6 +367,10 @@ namespace Backend.Services.Passkey
                 !RecoveryCodeHelper.VerifyRecoveryCode(request.RecoveryCode, user.RecoveryCodeHash))
                 throw new InvalidCredentialsException("Invalid recovery code.");
 
+            // Mark the recovery code as used for auditing
+            user.RecoveryCodeUsedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
             // Prepare FIDO2 options
             var fidoUser = new Fido2User
             {
@@ -478,6 +482,7 @@ namespace Backend.Services.Passkey
         var newCode = RecoveryCodeHelper.GenerateRecoveryCode();
         user.RecoveryCodeHash = RecoveryCodeHelper.HashRecoveryCode(newCode);
         user.RecoveryCodeCreatedAt = DateTime.UtcNow;
+        user.RecoveryCodeUsedAt = null;   // <-- reset because this applies to old code
         user.TokenVersion += 1;
 
         await _context.SaveChangesAsync();
