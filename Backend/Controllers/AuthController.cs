@@ -19,29 +19,6 @@ namespace Backend.Controllers
             _passkeyService = passkeyService;
         }
 
-        // private readonly IAuthService _authService;
-
-        // public AuthController(IAuthService authService)
-        // {
-        //     _authService = authService;
-        // }
-
-        // -----------------------------------------------------------
-        //  POST: /api/auth/register
-        // [HttpPost("register")]
-        // public async Task<IActionResult> Register([FromBody] RegisterRequestDto request)
-        // {
-        //     var response = await _authService.RegisterAsync(request);
-        //     return Ok(response);
-        // }
-
-        // [HttpPost("login")]
-        // public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
-        // {
-        //     var response = await _authService.LoginAsync(request);
-        //     return Ok(response);
-        // }
-
         [Authorize]
         [HttpGet("me")]
         public async Task<IActionResult> Me()

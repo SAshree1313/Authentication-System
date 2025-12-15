@@ -10,6 +10,7 @@ using System.Text;
 using Backend.Services.Token;
 using Fido2NetLib;
 using Backend.Services.Passkey;
+using Backend.Services.Auth;
 using System.IdentityModel.Tokens.Jwt;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -48,6 +49,13 @@ builder.Configuration["Jwt:Secret"] = jwtSecret;
 builder.Configuration["Jwt:Issuer"] = jwtIssuer;
 builder.Configuration["Jwt:Audience"] = jwtAudience;
 
+string? googleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
+
+if (string.IsNullOrWhiteSpace(googleClientId))
+    throw new Exception("GOOGLE_CLIENT_ID missing");
+
+builder.Configuration["Google:ClientId"] = googleClientId;
+
 // ------------------------------------------------------------------------------------
 // 3. Build Connection String
 // ------------------------------------------------------------------------------------
@@ -73,6 +81,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // ------------------------------------------------------------------------------------
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddMemoryCache();
+builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
+
 
 // ------------------------------------------------------------------------------------
 // 5. FIDO2 Setup

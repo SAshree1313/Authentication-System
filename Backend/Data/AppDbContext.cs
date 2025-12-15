@@ -9,6 +9,7 @@ namespace Backend.Data
 
         public DbSet<User> Users { get; set; }
         public DbSet<WebAuthnCredential> WebAuthnCredentials { get; set; }
+        public DbSet<AuthProvider> AuthProviders { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -35,9 +36,10 @@ namespace Backend.Data
                 entity.HasIndex(u => u.Email)
                       .IsUnique();
 
-            // Password column is no longer used
-            //  entity.Property(u => u.PasswordHash)
-            //        .HasColumnName("password_hash");
+                entity.Property(u => u.EmailVerified)
+                      .HasColumnName("email_verified")
+                      .HasDefaultValue(false)
+                      .IsRequired();
 
                 entity.Property(u => u.CreatedAt)
                       .HasColumnName("created_at")
@@ -93,6 +95,7 @@ namespace Backend.Data
                       .HasDefaultValueSql("CURRENT_TIMESTAMP");
                 entity.Property(w => w.UserId)
                       .HasColumnName("user_id");
+                      
                 // Configure foreign key to users table
                 entity.HasOne(w => w.User)
                       .WithMany(u => u.WebAuthnCredentials)
@@ -108,6 +111,53 @@ namespace Backend.Data
                       .HasColumnName("last_used_at")
                       .IsRequired(false);
             });
+
+            // ----------------------------------
+            // AuthProviders table configuration 
+            // ----------------------------------
+            modelBuilder.Entity<AuthProvider>(entity =>
+            {
+                  entity.ToTable("auth_providers");
+
+                  entity.HasKey(a => a.Id);
+
+                  entity.Property(a => a.ProviderName)
+                        .HasColumnName("provider_name")
+                        .HasMaxLength(50)
+                        .IsRequired();
+
+                  entity.Property(a => a.ProviderSub)
+                        .HasColumnName("provider_sub")
+                        .HasMaxLength(255)
+                        .IsRequired();
+
+                  entity.Property(a => a.ProviderClaimsJson)
+                        .HasColumnName("provider_claims")
+                        .IsRequired();
+
+                  entity.Property(a => a.CreatedAt)
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                  entity.Property(a => a.UpdatedAt)
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                  entity.Property(a => a.UserId)
+                        .HasColumnName("user_id")
+                        .IsRequired();
+
+                  entity.HasOne(a => a.User)
+                        .WithMany(u => u.AuthProviders)
+                        .HasForeignKey(a => a.UserId)
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                  entity.HasIndex(a => new { a.ProviderName, a.ProviderSub })
+                        .IsUnique();
+
+                  entity.HasIndex(a => a.UserId);
+            });
+
         }
     }
 }

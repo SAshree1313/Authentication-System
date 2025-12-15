@@ -5,17 +5,26 @@ import * as Recovery from "./flows/recovery";
 import * as Devices from "./flows/devices";
 import * as Profile from "./flows/profile";
 import * as Account from "./flows/account";
+import * as Google from "./flows/google";
 import { http } from "./http/client";
 export const AuthKit = {
-    init(baseUrl = "http://localhost:8080/api") {
-        http.setBase(baseUrl);
+    init(config = {}) {
+        if (config.baseUrl) {
+            http.setBase(config.baseUrl);
+        }
+        if (config.googleClientId) {
+            Google.configureGoogle(config.googleClientId);
+        }
     },
-    // Flows
+    // Passkey
     register: Register.register,
     login: Login.login,
     recoveryBegin: Recovery.recoveryBegin,
     recoveryVerifyCode: Recovery.recoveryVerifyCode,
     recoveryComplete: Recovery.recoveryComplete,
+    // Google
+    googleRegister: Google.googleRegister,
+    googleLogin: Google.googleLogin,
     // Devices
     listDevices: Devices.listDevices,
     renameDevice: Devices.renameDevice,
@@ -24,6 +33,6 @@ export const AuthKit = {
     addDeviceComplete: Devices.addDeviceComplete,
     // Profile
     me: Profile.me,
-    // Delete Account
+    // Account
     deleteAccount: Account.deleteAccount,
 };

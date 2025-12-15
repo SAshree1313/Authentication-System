@@ -25,5 +25,23 @@ export type RecoveryCompleteResponse = { success: boolean; newRecoveryCode?: str
 export type DeviceDto = { credentialId: string; deviceName?: string | null; createdAt: string; lastUsedAt?: string | null };
 export type DeviceListResponse = { devices: DeviceDto[]; success?: boolean };
 
+export type GoogleRegisterResponse = {
+  isNewUser: boolean;
+  token: string;
+  recoveryCode?: string;
+};
+
+export type GoogleLoginResponse = {
+  token: string;
+  isFirstLogin: boolean;
+};
 
 export type UserProfile = { id: number; name: string; email: string; hasPasskey: boolean };
+
+export {};
+
+declare global {
+  interface Window {
+    google?: any;
+  }
+}

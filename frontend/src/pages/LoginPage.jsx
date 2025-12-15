@@ -1,4 +1,3 @@
-// src/pages/LoginPage.jsx
 import "./LoginPage.css";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useContext, useEffect } from "react";
@@ -7,7 +6,8 @@ import { startLogin } from "../services/PasskeyService";
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { passkeyLogin } = useContext(AuthContext);
+
+  const { passkeyLogin, googleLogin } = useContext(AuthContext);
 
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -60,9 +60,9 @@ export default function LoginPage() {
     return `${secs}s`;
   };
 
-  // ------------------------------------------------------
-  // PASSKEY LOGIN 
-  // ------------------------------------------------------
+  // --------------------------------------------------
+  // PASSKEY LOGIN
+  // --------------------------------------------------
   const handleNext = async (e) => {
     e.preventDefault();
     setMessage("");
@@ -75,55 +75,111 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // 1) SDK automatically does begin → webauthn → complete
       const res = await startLogin({ email });
 
-      // backend returns { success, token, message }
       if (res?.success && res?.token) {
         await passkeyLogin(res.token);
         navigate("/welcome");
         return;
       }
 
-      // If backend returned success: false
       setMessage(res?.message || "Passkey login failed.");
-
     } catch (err) {
-      console.error("Login error:", err);
-
       const resp = err?.response;
 
-      if (resp) {
-        // 429 rate limit
-        if (resp.status === 429 || resp.data?.cooldownSeconds) {
-          const secs =
-            resp.data?.cooldownSeconds ??
-            parseInt((resp.data?.message || "").replace(/\D/g, "")) ??
-            300;
+      if (resp?.status === 429 || resp?.data?.cooldownSeconds) {
+        const secs =
+          resp.data?.cooldownSeconds ??
+          parseInt((resp.data?.message || "").replace(/\D/g, "")) ??
+          300;
 
-          const until = Date.now() + secs * 1000;
-          localStorage.setItem(COOLDOWN_KEY, until.toString());
-          setCooldownSeconds(secs);
+        const until = Date.now() + secs * 1000;
+        localStorage.setItem(COOLDOWN_KEY, until.toString());
+        setCooldownSeconds(secs);
 
-          setMessage("Too many attempts. Please wait before trying again.");
-        } else {
-          setMessage(resp.data?.message || "Login failed.");
-        }
+        setMessage("Too many attempts. Please wait before trying again.");
       } else {
-        setMessage(err?.message || "Unknown error occurred.");
+        setMessage(resp?.data?.message || "Login failed.");
       }
-
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="login-container">
-      <div className="login-card">
-        <h1 className="login-title">Sign in to your account</h1>
+  // --------------------------------------------------
+  // GOOGLE LOGIN
+  // --------------------------------------------------
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState("");
 
-        <form className="login-form" onSubmit={handleNext}>
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const res = await googleLogin();
+      
+      // If first-time user with recovery code, show modal
+      if (res?.recoveryCode) {
+        setRecoveryCode(res.recoveryCode);
+        setShowRecoveryModal(true);
+      } else {
+        navigate("/welcome");
+      }
+    } catch (err) {
+      setMessage(err?.message || "Google login failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRecoveryCodeAcknowledged = () => {
+    setShowRecoveryModal(false);
+    navigate("/welcome");
+  };
+
+  return (
+    <>
+      {/* Recovery Code Modal */}
+      {showRecoveryModal && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal-content" style={{ maxWidth: "500px" }}>
+            <h2>Save Your Recovery Code</h2>
+            <p style={{ marginBottom: "16px", color: "#6a737d" }}>
+              This is your account recovery code. Save it securely - you'll need it if you lose access to your devices.
+            </p>
+            
+            <div style={{
+              padding: "16px",
+              background: "#f6f8fa",
+              border: "1px solid #d0d7de",
+              borderRadius: "6px",
+              fontFamily: "monospace",
+              fontSize: "18px",
+              fontWeight: "bold",
+              textAlign: "center",
+              marginBottom: "16px",
+              userSelect: "all"
+            }}>
+              {recoveryCode}
+            </div>
+
+            <button
+              className="primary-btn"
+              onClick={handleRecoveryCodeAcknowledged}
+              style={{ width: "100%" }}
+            >
+              I've Saved My Recovery Code
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="login-container">
+        <div className="login-card">
+          <h1 className="login-title">Sign in to your account</h1>
+
+          <form className="login-form" onSubmit={handleNext}>
           <label>Email address</label>
           <input
             type="email"
@@ -134,8 +190,25 @@ export default function LoginPage() {
             required
           />
 
-          <button type="submit" className="primary-btn" disabled={loading || cooldownActive}>
+          <button
+            type="submit"
+            className="primary-btn"
+            disabled={loading || cooldownActive}
+          >
             {loading ? "Loading..." : "Next"}
+          </button>
+
+          <div style={{ textAlign: "center", margin: "-7px", color: "#6a737d" }}>
+            or
+          </div>
+
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={handleGoogleLogin}
+            disabled={loading || cooldownActive}
+          >
+            Continue with Google
           </button>
 
           <div className="login-recovery-link">
@@ -155,10 +228,11 @@ export default function LoginPage() {
         </form>
       </div>
 
-      <div className="login-footer">
-        <span>Don't have an account? </span>
-        <Link to="/register">Register</Link>
+        <div className="login-footer">
+          <span>Don't have an account? </span>
+          <Link to="/register">Register Using Passkey</Link>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
