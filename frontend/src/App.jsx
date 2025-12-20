@@ -28,7 +28,7 @@ export default function App() {
           />
 
           {/* Redirect root to login */}
-          <Route path="*" element={<Login />} />
+          <Route path="*" element={<Welcome />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

@@ -14,11 +14,17 @@ using Backend.Services.Auth;
 using System.IdentityModel.Tokens.Jwt;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.UseUrls("http://localhost:8080");
+var aspnetEnv = builder.Environment.EnvironmentName;
+Console.WriteLine($"ASPNETCORE_ENVIRONMENT = {aspnetEnv}");
+
 
 // ------------------------------------------------------------------------------------
 // 1. Load `.env` only when running locally
 // ------------------------------------------------------------------------------------
-var isLocal = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"));
+var isLocal =
+    builder.Environment.IsDevelopment() ||
+    string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"));
 
 if (isLocal)
 {
@@ -31,22 +37,18 @@ if (isLocal)
 }
 
 // ------------------------------------------------------------------------------------
-// 2. Environment variables
+// 2. Environment variables (AUTH / JWT / GOOGLE ONLY)
 // ------------------------------------------------------------------------------------
-string? dbName     = Environment.GetEnvironmentVariable("POSTGRES_DB");
-string? dbUser     = Environment.GetEnvironmentVariable("POSTGRES_USER");
-string? dbPassword = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD");
-
-string? jwtSecret  = Environment.GetEnvironmentVariable("JWT_SECRET");
-string? jwtIssuer  = Environment.GetEnvironmentVariable("JWT_ISSUER");
+string? jwtSecret   = Environment.GetEnvironmentVariable("JWT_SECRET");
+string? jwtIssuer   = Environment.GetEnvironmentVariable("JWT_ISSUER");
 string? jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE");
 
-if (string.IsNullOrWhiteSpace(jwtSecret)) throw new Exception("JWT_SECRET missing");
-if (string.IsNullOrWhiteSpace(jwtIssuer)) throw new Exception("JWT_ISSUER missing");
+if (string.IsNullOrWhiteSpace(jwtSecret))   throw new Exception("JWT_SECRET missing");
+if (string.IsNullOrWhiteSpace(jwtIssuer))   throw new Exception("JWT_ISSUER missing");
 if (string.IsNullOrWhiteSpace(jwtAudience)) throw new Exception("JWT_AUDIENCE missing");
 
-builder.Configuration["Jwt:Secret"] = jwtSecret;
-builder.Configuration["Jwt:Issuer"] = jwtIssuer;
+builder.Configuration["Jwt:Secret"]   = jwtSecret;
+builder.Configuration["Jwt:Issuer"]   = jwtIssuer;
 builder.Configuration["Jwt:Audience"] = jwtAudience;
 
 string? googleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
@@ -57,24 +59,33 @@ if (string.IsNullOrWhiteSpace(googleClientId))
 builder.Configuration["Google:ClientId"] = googleClientId;
 
 // ------------------------------------------------------------------------------------
-// 3. Build Connection String
+// 3. DATABASE CONFIGURATION
+//    - Local  → SQLite (file-based)
+//    - Docker → PostgreSQL (env-injected connection string)
 // ------------------------------------------------------------------------------------
-string connectionString;
-
-if (isLocal)
-{
-    var host = Environment.GetEnvironmentVariable("POSTGRES_HOST") ?? "localhost";
-    connectionString =
-        $"Host={host};Port=5432;Database={dbName};Username={dbUser};Password={dbPassword}";
-}
-else
-{
-    connectionString =
-        $"Host=postgres;Port=5432;Database={dbName};Username={dbUser};Password={dbPassword}";
-}
-
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(connectionString));
+{
+    if (isLocal)
+    {
+        // LOCAL: SQLite database in /Data/auth.db
+        var appdataDir = Path.Combine(builder.Environment.ContentRootPath, "AppData");
+        Directory.CreateDirectory(appdataDir);
+
+        var sqlitePath = Path.Combine(appdataDir, "auth.db");
+        options.UseSqlite($"Data Source={sqlitePath}");
+    }
+    else
+    {
+        // DOCKER: PostgreSQL (unchanged behavior)
+        var connectionString =
+            builder.Configuration.GetConnectionString("DefaultConnection");
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new Exception("PostgreSQL connection string missing");
+
+        options.UseNpgsql(connectionString);
+    }
+});
 
 // ------------------------------------------------------------------------------------
 // 4. Services
@@ -82,7 +93,6 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
-
 
 // ------------------------------------------------------------------------------------
 // 5. FIDO2 Setup
@@ -208,7 +218,8 @@ builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
-        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.PropertyNamingPolicy =
+            System.Text.Json.JsonNamingPolicy.CamelCase;
     });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -219,7 +230,7 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 var app = builder.Build();
 
 // ------------------------------------------------------------------------------------
-// ⭐ 9. APPLY DATABASE MIGRATIONS — REQUIRED BEFORE AUTH MIDDLEWARE ⭐
+// ⭐ 9. APPLY DATABASE MIGRATIONS (LOCAL + DOCKER)
 // ------------------------------------------------------------------------------------
 using (var scope = app.Services.CreateScope())
 {

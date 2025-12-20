@@ -1,2 +1,4 @@
 .env
 pgdata/
+# Local SQLite DB
+AppData/*.db

@@ -20,7 +20,9 @@ services:
       env_file:
         - .env
       environment:
+        - ASPNETCORE_ENVIRONMENT=Docker
         - ASPNETCORE_URLS=http://+:80
+        - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
       depends_on:
         - postgres
 
